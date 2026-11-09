@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&display=swap');
+
+:root {
+  --bg-main: #06070d;
+  --bg-card: rgba(15, 18, 34, 0.75);
+  --primary: #ec4899;
+  --accent-violet: #8b5cf6;
+  --accent-cyan: #06b6d4;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: var(--bg-main);
+  color: #f1f5f9;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .font-heading {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+}
+
+.glass-panel {
+  background: rgba(13, 16, 30, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-header {
+  background: rgba(8, 10, 18, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080a12;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e264e;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ec4899;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #121629 25%, #1f2647 50%, #121629 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+

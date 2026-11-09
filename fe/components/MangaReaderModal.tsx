@@ -1,0 +1,358 @@
+import React, { useState, useEffect } from 'react';
+import {
+  X,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Bookmark,
+  Check,
+  Columns,
+  ScrollText,
+  ZoomIn,
+  ZoomOut,
+  List
+} from 'lucide-react';
+import {
+  MangaCardItem,
+  MangaChapterItem,
+  MediaCategory,
+  MediaItem,
+  MediaStatus
+} from '../types';
+import { mangaApi } from '../services/otakuApi';
+
+interface MangaReaderModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  targetMangaSlug: string | null;
+  watchlist: MediaItem[];
+  onSaveToWatchlist: (item: MediaItem) => void;
+}
+
+const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
+  isOpen,
+  onClose,
+  targetMangaSlug,
+  watchlist,
+  onSaveToWatchlist
+}) => {
+  const [mangaDetail, setMangaDetail] = useState<MangaCardItem | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [activeChapter, setActiveChapter] = useState<MangaChapterItem | null>(null);
+  const [pages, setPages] = useState<string[]>([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [readMode, setReadMode] = useState<'webtoon' | 'page'>('webtoon');
+  const [currentPageIdx, setCurrentPageIdx] = useState(0);
+  const [zoomWidth, setZoomWidth] = useState(800);
+  const [chapSearch, setChapSearch] = useState('');
+  const [isDescOrder, setIsDescOrder] = useState(false);
+
+  // Tải thông tin truyện & danh sách Chapter khi mở modal
+  useEffect(() => {
+    if (!isOpen || !targetMangaSlug) return;
+    setLoadingDetail(true);
+    setMangaDetail(null);
+    setActiveChapter(null);
+    setPages([]);
+
+    mangaApi
+      .getMangaDetail(targetMangaSlug)
+      .then((detail) => {
+        setMangaDetail(detail);
+        if (detail?.chapters && detail.chapters.length > 0) {
+          // Mặc định mở Chapter 1 (hoặc chap đầu danh sách)
+          setActiveChapter(detail.chapters[0]);
+        }
+      })
+      .finally(() => setLoadingDetail(false));
+  }, [isOpen, targetMangaSlug]);
+
+  // Tải các trang ảnh của Chapter đang chọn
+  useEffect(() => {
+    if (!activeChapter?.chapter_api_data) return;
+    setLoadingPages(true);
+    setPages([]);
+    setCurrentPageIdx(0);
+
+    mangaApi
+      .getChapterPages(activeChapter.chapter_api_data)
+      .then((res) => {
+        setPages(res.pages);
+      })
+      .finally(() => setLoadingPages(false));
+  }, [activeChapter]);
+
+  if (!isOpen || !targetMangaSlug) return null;
+
+  const rawChapters = mangaDetail?.chapters || [];
+  const chapters = isDescOrder ? rawChapters : [...rawChapters].reverse();
+  const filteredChapters = chapSearch.trim()
+    ? chapters.filter((c) => c.chapter_name.toLowerCase().includes(chapSearch.trim().toLowerCase()))
+    : chapters;
+
+  const currentChapIdx = chapters.findIndex(
+    (c) => c.chapter_api_data === activeChapter?.chapter_api_data
+  );
+  const hasPrevChap = currentChapIdx > 0;
+  const hasNextChap = currentChapIdx >= 0 && currentChapIdx < chapters.length - 1;
+
+  const isSaved = watchlist.some((w) => w.slug === targetMangaSlug);
+
+  const handleBookmark = () => {
+    if (!mangaDetail) return;
+    const item: MediaItem = {
+      id: `manga_${mangaDetail.slug}`,
+      title: mangaDetail.title,
+      originTitle: mangaDetail.originTitle,
+      category: MediaCategory.MANGA,
+      status: MediaStatus.WATCHING,
+      rating: 9.5,
+      description: mangaDetail.description || '',
+      imageUrl: mangaDetail.thumbUrl,
+      genres: mangaDetail.genres || ['Manga'],
+      createdAt: Date.now(),
+      slug: mangaDetail.slug,
+      currentProgress: activeChapter ? `Chap ${activeChapter.chapter_name}` : 'Chap 1'
+    };
+    onSaveToWatchlist(item);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#05060b]/95 backdrop-blur-2xl flex flex-col">
+      {/* Top Reader Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-[#090c16] border-b border-white/10">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-slate-200 hover:text-emerald-300 border border-white/10 text-xs font-bold transition-all"
+          >
+            <X className="w-4 h-4" />
+            <span>Đóng Truyện</span>
+          </button>
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+              {mangaDetail?.title || 'Đang tải truyện...'}
+            </h2>
+            <p className="text-[11px] text-emerald-400 font-semibold">
+              {activeChapter ? `Chapter ${activeChapter.chapter_name}` : 'Chọn chapter để đọc'} •{' '}
+              {pages.length} trang ảnh
+            </p>
+          </div>
+        </div>
+
+        {/* Chuyển Chapter nhanh + Chế độ đọc */}
+        <div className="flex items-center gap-2">
+          <button
+            disabled={!hasPrevChap}
+            onClick={() => hasPrevChap && setActiveChapter(chapters[currentChapIdx - 1])}
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-slate-200"
+            title="Chap trước"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <select
+            value={activeChapter?.chapter_api_data || ''}
+            onChange={(e) => {
+              const found = chapters.find((c) => c.chapter_api_data === e.target.value);
+              if (found) setActiveChapter(found);
+            }}
+            className="bg-slate-900 border border-white/15 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-500 max-w-[160px]"
+          >
+            {chapters.map((ch, idx) => (
+              <option key={idx} value={ch.chapter_api_data}>
+                Chapter {ch.chapter_name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            disabled={!hasNextChap}
+            onClick={() => hasNextChap && setActiveChapter(chapters[currentChapIdx + 1])}
+            className="p-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-30 border border-emerald-500/40 text-emerald-300"
+            title="Chap tiếp theo"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+
+          {/* Chế độ Cuộn dọc (Webtoon) vs Lật trang (Page) */}
+          <div className="hidden md:flex items-center bg-slate-900 p-1 rounded-xl border border-white/10">
+            <button
+              onClick={() => setReadMode('webtoon')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                readMode === 'webtoon'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ScrollText className="w-3.5 h-3.5" />
+              <span>Cuộn Dọc</span>
+            </button>
+            <button
+              onClick={() => setReadMode('page')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                readMode === 'page'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Columns className="w-3.5 h-3.5" />
+              <span>Lật Trang</span>
+            </button>
+          </div>
+
+          {/* Phóng to / Thu nhỏ */}
+          <div className="hidden lg:flex items-center gap-1">
+            <button
+              onClick={() => setZoomWidth((w) => Math.max(500, w - 120))}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+              title="Thu nhỏ"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setZoomWidth((w) => Math.min(1300, w + 120))}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+              title="Phóng to"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button
+            onClick={handleBookmark}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+              isSaved
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-pink-500/20 border-pink-500/40 text-pink-300'
+            }`}
+          >
+            {isSaved ? <Check className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+            <span className="hidden sm:inline">{isSaved ? 'Đã Lưu' : '+ Lưu Truyện'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Body: Cột đọc truyện + Sidebar chọn Chapter */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Khu vực hiển thị trang truyện */}
+        <div className="flex-1 overflow-y-auto bg-[#05060a] flex flex-col items-center py-4 px-2">
+          {loadingDetail || loadingPages ? (
+            <div className="my-auto flex flex-col items-center gap-3">
+              <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+              <p className="text-sm font-bold text-slate-200">
+                Đang tải các trang truyện từ CDN tốc độ cao...
+              </p>
+            </div>
+          ) : pages.length === 0 ? (
+            <div className="my-auto text-center p-6">
+              <BookOpen className="w-12 h-12 text-slate-600 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">Chọn một Chapter bên phải để bắt đầu đọc.</p>
+            </div>
+          ) : readMode === 'webtoon' ? (
+            <div className="flex flex-col items-center w-full" style={{ maxWidth: `${zoomWidth}px` }}>
+              {pages.map((imgUrl, idx) => (
+                <img
+                  key={idx}
+                  src={imgUrl}
+                  alt={`Trang ${idx + 1}`}
+                  loading="lazy"
+                  className="w-full h-auto block select-none"
+                />
+              ))}
+
+              {/* Nút chuyển chap cuối trang */}
+              <div className="flex items-center gap-4 my-10">
+                <button
+                  disabled={!hasPrevChap}
+                  onClick={() => hasPrevChap && setActiveChapter(chapters[currentChapIdx - 1])}
+                  className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 disabled:opacity-40 text-xs font-extrabold text-white"
+                >
+                  ← Chapter Trước
+                </button>
+                <button
+                  disabled={!hasNextChap}
+                  onClick={() => hasNextChap && setActiveChapter(chapters[currentChapIdx + 1])}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 disabled:opacity-40 text-xs font-extrabold text-slate-950 shadow-lg"
+                >
+                  Chapter Tiếp Theo →
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Chế độ Lật từng trang */
+            <div className="flex flex-col items-center my-auto w-full max-w-4xl">
+              <img
+                src={pages[currentPageIdx]}
+                alt={`Trang ${currentPageIdx + 1}`}
+                className="max-h-[78vh] w-auto object-contain rounded-lg shadow-2xl border border-white/10"
+              />
+              <div className="flex items-center gap-4 mt-4">
+                <button
+                  disabled={currentPageIdx <= 0}
+                  onClick={() => setCurrentPageIdx((i) => Math.max(0, i - 1))}
+                  className="px-4 py-2 rounded-xl bg-white/10 text-xs font-bold disabled:opacity-40"
+                >
+                  ← Trang trước
+                </button>
+                <span className="text-xs font-bold text-emerald-400">
+                  Trang {currentPageIdx + 1} / {pages.length}
+                </span>
+                <button
+                  disabled={currentPageIdx >= pages.length - 1}
+                  onClick={() => setCurrentPageIdx((i) => Math.min(pages.length - 1, i + 1))}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-extrabold disabled:opacity-40"
+                >
+                  Trang sau →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar danh sách Chapter bên phải (ẩn trên mobile nhỏ) */}
+        <div className="hidden xl:flex w-80 bg-[#080b14] border-l border-white/10 flex-col p-4">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10 gap-2">
+            <button
+              onClick={() => setIsDescOrder(!isDescOrder)}
+              className="text-xs font-extrabold text-white flex items-center gap-1.5 hover:text-emerald-400 transition-colors"
+              title="Đổi thứ tự xem chapter"
+            >
+              <List className="w-4 h-4 text-emerald-400" />
+              <span>CHAP ({chapters.length}) {isDescOrder ? '↓ Mới' : '↑ Cũ'}</span>
+            </button>
+            <input
+              type="text"
+              value={chapSearch}
+              onChange={(e) => setChapSearch(e.target.value)}
+              placeholder="Tìm chap..."
+              className="w-24 px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-xs text-white focus:outline-none"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto grid grid-cols-3 gap-2 content-start pr-1">
+            {filteredChapters.map((ch, idx) => {
+              const active = activeChapter?.chapter_api_data === ch.chapter_api_data;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setActiveChapter(ch)}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold truncate border transition-all ${
+                    active
+                      ? 'bg-emerald-500 text-slate-950 font-extrabold border-emerald-300 shadow'
+                      : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-white/10'
+                  }`}
+                >
+                  Chap {ch.chapter_name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MangaReaderModal;
+
