@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   BookOpen,
@@ -11,7 +11,9 @@ import {
   ScrollText,
   ZoomIn,
   ZoomOut,
-  List
+  List,
+  Sidebar as SidebarIcon,
+  Search
 } from 'lucide-react';
 import {
   MangaCardItem,
@@ -30,6 +32,8 @@ interface MangaReaderModalProps {
   onSaveToWatchlist: (item: MediaItem) => void;
 }
 
+const CHUNK_SIZE = 50;
+
 const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
   isOpen,
   onClose,
@@ -47,6 +51,8 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
   const [zoomWidth, setZoomWidth] = useState(800);
   const [chapSearch, setChapSearch] = useState('');
   const [isDescOrder, setIsDescOrder] = useState(false);
+  const [selectedChunkIdx, setSelectedChunkIdx] = useState(0);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   // Tải thông tin truyện & danh sách Chapter khi mở modal
   useEffect(() => {
@@ -55,14 +61,17 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
     setMangaDetail(null);
     setActiveChapter(null);
     setPages([]);
+    setSelectedChunkIdx(0);
+    setChapSearch('');
 
     mangaApi
       .getMangaDetail(targetMangaSlug)
       .then((detail) => {
         setMangaDetail(detail);
         if (detail?.chapters && detail.chapters.length > 0) {
-          // Mặc định mở Chapter 1 (hoặc chap đầu danh sách)
-          setActiveChapter(detail.chapters[0]);
+          // Mặc định mở Chapter đầu tiên (Chap 1 khi không đảo chiều)
+          const first = isDescOrder ? detail.chapters[0] : detail.chapters[detail.chapters.length - 1];
+          setActiveChapter(first || detail.chapters[0]);
         }
       })
       .finally(() => setLoadingDetail(false));
@@ -83,13 +92,47 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
       .finally(() => setLoadingPages(false));
   }, [activeChapter]);
 
-  if (!isOpen || !targetMangaSlug) return null;
+  const rawChapters = useMemo(() => mangaDetail?.chapters || [], [mangaDetail]);
+  const chapters = useMemo(
+    () => (isDescOrder ? rawChapters : [...rawChapters].reverse()),
+    [rawChapters, isDescOrder]
+  );
 
-  const rawChapters = mangaDetail?.chapters || [];
-  const chapters = isDescOrder ? rawChapters : [...rawChapters].reverse();
-  const filteredChapters = chapSearch.trim()
-    ? chapters.filter((c) => c.chapter_name.toLowerCase().includes(chapSearch.trim().toLowerCase()))
-    : chapters;
+  const filteredChapters = useMemo(() => {
+    if (!chapSearch.trim()) return chapters;
+    const kw = chapSearch.trim().toLowerCase();
+    return chapters.filter(
+      (c) =>
+        c.chapter_name.toLowerCase().includes(kw) ||
+        (c.chapter_title && c.chapter_title.toLowerCase().includes(kw))
+    );
+  }, [chapters, chapSearch]);
+
+  // Chia nhỏ danh sách thành từng cụm 50 tập (Chunks)
+  const totalChunks = Math.ceil(filteredChapters.length / CHUNK_SIZE);
+  const currentChunkChapters = useMemo(() => {
+    if (filteredChapters.length <= CHUNK_SIZE || chapSearch.trim()) {
+      return filteredChapters;
+    }
+    const start = selectedChunkIdx * CHUNK_SIZE;
+    return filteredChapters.slice(start, start + CHUNK_SIZE);
+  }, [filteredChapters, selectedChunkIdx, chapSearch]);
+
+  // Tự động chuyển Chunk khi activeChapter thay đổi
+  useEffect(() => {
+    if (!activeChapter || filteredChapters.length <= CHUNK_SIZE) return;
+    const foundIdx = filteredChapters.findIndex(
+      (c) => c.chapter_api_data === activeChapter.chapter_api_data
+    );
+    if (foundIdx !== -1) {
+      const neededChunk = Math.floor(foundIdx / CHUNK_SIZE);
+      if (neededChunk !== selectedChunkIdx) {
+        setSelectedChunkIdx(neededChunk);
+      }
+    }
+  }, [activeChapter, filteredChapters]);
+
+  if (!isOpen || !targetMangaSlug) return null;
 
   const currentChapIdx = chapters.findIndex(
     (c) => c.chapter_api_data === activeChapter?.chapter_api_data
@@ -121,21 +164,21 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-[#05060b]/95 backdrop-blur-2xl flex flex-col">
       {/* Top Reader Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-[#090c16] border-b border-white/10">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-2.5 bg-[#090c16] border-b border-white/10">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-slate-200 hover:text-emerald-300 border border-white/10 text-xs font-bold transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-slate-200 hover:text-emerald-300 border border-white/10 text-xs font-bold transition-all"
           >
             <X className="w-4 h-4" />
-            <span>Đóng Truyện</span>
+            <span>Đóng</span>
           </button>
           <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+            <h2 className="text-xs sm:text-sm font-extrabold text-white truncate max-w-xs sm:max-w-md">
               {mangaDetail?.title || 'Đang tải truyện...'}
             </h2>
-            <p className="text-[11px] text-emerald-400 font-semibold">
-              {activeChapter ? `Chapter ${activeChapter.chapter_name}` : 'Chọn chapter để đọc'} •{' '}
+            <p className="text-[11px] text-emerald-400 font-semibold truncate">
+              {activeChapter ? `Chapter ${activeChapter.chapter_name}` : 'Chọn chapter'} •{' '}
               {pages.length} trang ảnh
             </p>
           </div>
@@ -146,7 +189,7 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
           <button
             disabled={!hasPrevChap}
             onClick={() => hasPrevChap && setActiveChapter(chapters[currentChapIdx - 1])}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-slate-200"
+            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-slate-200"
             title="Chap trước"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -158,7 +201,7 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
               const found = chapters.find((c) => c.chapter_api_data === e.target.value);
               if (found) setActiveChapter(found);
             }}
-            className="bg-slate-900 border border-white/15 rounded-xl px-3 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-500 max-w-[160px]"
+            className="bg-slate-900 border border-white/15 rounded-xl px-2.5 py-1 text-xs font-bold text-white focus:outline-none focus:border-emerald-500 max-w-[150px]"
           >
             {chapters.map((ch, idx) => (
               <option key={idx} value={ch.chapter_api_data}>
@@ -170,14 +213,14 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
           <button
             disabled={!hasNextChap}
             onClick={() => hasNextChap && setActiveChapter(chapters[currentChapIdx + 1])}
-            className="p-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-30 border border-emerald-500/40 text-emerald-300"
+            className="p-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-30 border border-emerald-500/40 text-emerald-300"
             title="Chap tiếp theo"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
 
           {/* Chế độ Cuộn dọc (Webtoon) vs Lật trang (Page) */}
-          <div className="hidden md:flex items-center bg-slate-900 p-1 rounded-xl border border-white/10">
+          <div className="hidden md:flex items-center bg-slate-900 p-0.5 rounded-xl border border-white/10">
             <button
               onClick={() => setReadMode('webtoon')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
@@ -187,7 +230,7 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
               }`}
             >
               <ScrollText className="w-3.5 h-3.5" />
-              <span>Cuộn Dọc</span>
+              <span>Cuộn</span>
             </button>
             <button
               onClick={() => setReadMode('page')}
@@ -206,14 +249,14 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
           <div className="hidden lg:flex items-center gap-1">
             <button
               onClick={() => setZoomWidth((w) => Math.max(500, w - 120))}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
               title="Thu nhỏ"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
               onClick={() => setZoomWidth((w) => Math.min(1300, w + 120))}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
               title="Phóng to"
             >
               <ZoomIn className="w-4 h-4" />
@@ -222,14 +265,27 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
 
           <button
             onClick={handleBookmark}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
               isSaved
                 ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                 : 'bg-pink-500/20 border-pink-500/40 text-pink-300'
             }`}
           >
             {isSaved ? <Check className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
-            <span className="hidden sm:inline">{isSaved ? 'Đã Lưu' : '+ Lưu Truyện'}</span>
+            <span className="hidden sm:inline">{isSaved ? 'Đã Lưu' : '+ Lưu'}</span>
+          </button>
+
+          {/* Nút Ẩn/Hiện Sidebar Chapter */}
+          <button
+            onClick={() => setShowSidebar(!showSidebar)}
+            className={`p-1.5 rounded-xl border transition-all ${
+              showSidebar
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+            }`}
+            title="Đóng / Mở danh sách Chapter"
+          >
+            <SidebarIcon className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -258,7 +314,7 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
                   src={imgUrl}
                   alt={`Trang ${idx + 1}`}
                   loading="lazy"
-                  className="w-full h-auto block select-none"
+                  className="w-full h-auto block select-none bg-slate-900"
                 />
               ))}
 
@@ -311,48 +367,87 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
           )}
         </div>
 
-        {/* Sidebar danh sách Chapter bên phải (ẩn trên mobile nhỏ) */}
-        <div className="hidden xl:flex w-80 bg-[#080b14] border-l border-white/10 flex-col p-4">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10 gap-2">
-            <button
-              onClick={() => setIsDescOrder(!isDescOrder)}
-              className="text-xs font-extrabold text-white flex items-center gap-1.5 hover:text-emerald-400 transition-colors"
-              title="Đổi thứ tự xem chapter"
-            >
-              <List className="w-4 h-4 text-emerald-400" />
-              <span>CHAP ({chapters.length}) {isDescOrder ? '↓ Mới' : '↑ Cũ'}</span>
-            </button>
-            <input
-              type="text"
-              value={chapSearch}
-              onChange={(e) => setChapSearch(e.target.value)}
-              placeholder="Tìm chap..."
-              className="w-24 px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-xs text-white focus:outline-none"
-            />
+        {/* Sidebar danh sách Chapter bên phải (Rộng rãi, hỗ trợ phân đoạn Chunks) */}
+        {showSidebar && (
+          <div className="w-80 sm:w-96 bg-[#080b14] border-l border-white/10 flex flex-col p-3.5 z-20 transition-all">
+            {/* Header Sidebar & Tìm kiếm */}
+            <div className="flex items-center justify-between pb-3 mb-2.5 border-b border-white/10 gap-2">
+              <button
+                onClick={() => setIsDescOrder(!isDescOrder)}
+                className="text-xs font-extrabold text-white flex items-center gap-1.5 hover:text-emerald-400 transition-colors shrink-0"
+                title="Đổi thứ tự xem chapter"
+              >
+                <List className="w-4 h-4 text-emerald-400" />
+                <span>CHAP ({chapters.length}) {isDescOrder ? '↓ Mới' : '↑ Cũ'}</span>
+              </button>
+
+              <div className="relative flex-1 max-w-[150px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={chapSearch}
+                  onChange={(e) => setChapSearch(e.target.value)}
+                  placeholder="Gõ số chap..."
+                  className="w-full pl-8 pr-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Phân đoạn Chapter Chunks nếu truyện có hơn 50 chap */}
+            {totalChunks > 1 && !chapSearch.trim() && (
+              <div className="flex items-center gap-1 overflow-x-auto pb-2 mb-2 no-scrollbar">
+                {Array.from({ length: totalChunks }).map((_, cIdx) => {
+                  const startNum = cIdx * CHUNK_SIZE + 1;
+                  const endNum = Math.min((cIdx + 1) * CHUNK_SIZE, filteredChapters.length);
+                  const isCurrent = selectedChunkIdx === cIdx;
+                  return (
+                    <button
+                      key={cIdx}
+                      onClick={() => setSelectedChunkIdx(cIdx)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold whitespace-nowrap transition-all border shrink-0 ${
+                        isCurrent
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
+                          : 'bg-slate-900 text-slate-400 hover:text-white border-white/10'
+                      }`}
+                    >
+                      {startNum} - {endNum}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Danh Sách Nút Chapter (Grid 4 cột thoáng, số to rõ ràng) */}
+            <div className="flex-1 overflow-y-auto grid grid-cols-4 sm:grid-cols-4 gap-2 content-start pr-1">
+              {currentChunkChapters.map((ch, idx) => {
+                const active = activeChapter?.chapter_api_data === ch.chapter_api_data;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveChapter(ch)}
+                    title={ch.chapter_title || `Chapter ${ch.chapter_name}`}
+                    className={`h-10 px-1 rounded-xl text-xs font-black transition-all border flex items-center justify-center truncate ${
+                      active
+                        ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 border-emerald-200 shadow-lg shadow-emerald-500/25 scale-[1.03]'
+                        : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-white/10 hover:border-emerald-500/40'
+                    }`}
+                  >
+                    <span>{ch.chapter_name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer tóm tắt số chap */}
+            <div className="pt-2.5 mt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
+              <span>Đang đọc: <strong className="text-emerald-400">Chap {activeChapter?.chapter_name || '1'}</strong></span>
+              <span>Tổng: {chapters.length} tập</span>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto grid grid-cols-3 gap-2 content-start pr-1">
-            {filteredChapters.map((ch, idx) => {
-              const active = activeChapter?.chapter_api_data === ch.chapter_api_data;
-              return (
-                <button
-                  key={idx}
-                  onClick={() => setActiveChapter(ch)}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold truncate border transition-all ${
-                    active
-                      ? 'bg-emerald-500 text-slate-950 font-extrabold border-emerald-300 shadow'
-                      : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-white/10'
-                  }`}
-                >
-                  Chap {ch.chapter_name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default MangaReaderModal;
-

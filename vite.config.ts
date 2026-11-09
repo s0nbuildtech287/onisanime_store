@@ -106,11 +106,15 @@ function onisanimeBackendPlugin(): Plugin {
             }
           }
 
-          // Kiểm tra tổng số trang
-          const totalPagesMatch = html.match(/\/([0-9]+)"[^>]*>Cuối/i) ||
-                                  html.match(/page=([0-9]+)[^>]*>Cuối/i) ||
-                                  html.match(/page=([0-9]+)/);
-          const totalPages = totalPagesMatch ? parseInt(totalPagesMatch[1], 10) : 50;
+          // Kiểm tra tổng số trang từ khối pagination của NetTruyen
+          const pagiBlock = html.match(/<ul class="pagination"[\s\S]*?<\/ul>/);
+          let totalPages = 50;
+          if (pagiBlock) {
+            const pageNumbers = [...pagiBlock[0].matchAll(/page=([0-9]+)/g)].map((m) => parseInt(m[1], 10));
+            if (pageNumbers.length > 0) {
+              totalPages = Math.max(...pageNumbers);
+            }
+          }
 
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');

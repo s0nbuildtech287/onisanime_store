@@ -585,23 +585,51 @@ const App: React.FC = () => {
             )}
 
             {/* Pagination */}
-            <div className="flex items-center justify-center gap-3 pt-4">
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-6 pb-4">
               <button
                 disabled={animePage <= 1}
-                onClick={() => setAnimePage((p) => Math.max(1, p - 1))}
-                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-bold border border-white/10"
+                onClick={() => {
+                  setAnimePage(1);
+                  window.scrollTo({ top: 400, behavior: 'smooth' });
+                }}
+                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
+                title="Trang đầu"
+              >
+                « Đầu
+              </button>
+              <button
+                disabled={animePage <= 1}
+                onClick={() => {
+                  setAnimePage((p) => Math.max(1, p - 1));
+                  window.scrollTo({ top: 400, behavior: 'smooth' });
+                }}
+                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
               >
                 <ChevronLeft className="w-4 h-4" /> Trang trước
               </button>
-              <span className="text-xs font-extrabold text-pink-400 px-3">
+              <div className="px-4 py-2 rounded-xl bg-slate-900 border border-pink-500/30 text-xs font-extrabold text-pink-400">
                 Trang {animePage} / {animeTotalPages}
-              </span>
+              </div>
               <button
                 disabled={animePage >= animeTotalPages}
-                onClick={() => setAnimePage((p) => p + 1)}
+                onClick={() => {
+                  setAnimePage((p) => p + 1);
+                  window.scrollTo({ top: 400, behavior: 'smooth' });
+                }}
                 className="flex items-center gap-1 px-4 py-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-xs font-bold border border-pink-500/30"
               >
                 Trang tiếp <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                disabled={animePage >= animeTotalPages}
+                onClick={() => {
+                  setAnimePage(animeTotalPages);
+                  window.scrollTo({ top: 400, behavior: 'smooth' });
+                }}
+                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
+                title="Trang cuối"
+              >
+                Cuối »
               </button>
             </div>
           </div>
@@ -803,23 +831,55 @@ const App: React.FC = () => {
             )}
 
             {/* Manga Pagination */}
-            <div className="flex items-center justify-center gap-3 pt-4">
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-6 pb-4">
               <button
                 disabled={mangaPage <= 1}
-                onClick={() => setMangaPage((p) => Math.max(1, p - 1))}
-                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-xs font-bold border border-white/10"
+                onClick={() => {
+                  setMangaPage(1);
+                  window.scrollTo({ top: 300, behavior: 'smooth' });
+                }}
+                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
+                title="Trang đầu"
+              >
+                « Đầu
+              </button>
+
+              <button
+                disabled={mangaPage <= 1}
+                onClick={() => {
+                  setMangaPage((p) => Math.max(1, p - 1));
+                  window.scrollTo({ top: 300, behavior: 'smooth' });
+                }}
+                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
               >
                 <ChevronLeft className="w-4 h-4" /> Trang trước
               </button>
-              <span className="text-xs font-extrabold text-emerald-400 px-3">
+
+              <div className="px-4 py-2 rounded-xl bg-slate-900 border border-emerald-500/30 text-xs font-extrabold text-emerald-400">
                 Trang {mangaPage} / {mangaTotalPages}
-              </span>
+              </div>
+
               <button
                 disabled={mangaPage >= mangaTotalPages}
-                onClick={() => setMangaPage((p) => p + 1)}
-                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/30"
+                onClick={() => {
+                  setMangaPage((p) => p + 1);
+                  window.scrollTo({ top: 300, behavior: 'smooth' });
+                }}
+                className="flex items-center gap-1 px-4 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-30 text-emerald-300 text-xs font-bold border border-emerald-500/30"
               >
                 Trang tiếp <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <button
+                disabled={mangaPage >= mangaTotalPages}
+                onClick={() => {
+                  setMangaPage(mangaTotalPages);
+                  window.scrollTo({ top: 300, behavior: 'smooth' });
+                }}
+                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
+                title="Trang cuối"
+              >
+                Cuối »
               </button>
             </div>
           </div>
