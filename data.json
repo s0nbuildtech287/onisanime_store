@@ -10,7 +10,12 @@
     "imageUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-m1gX3iwfIsLu.png",
     "bannerUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/151807-37yfQA3ym8PA.jpg",
     "topOrder": 1,
-    "genres": ["Hành Động", "Giả Tưởng", "Phiêu Lưu", "Shonen"],
+    "genres": [
+      "Hành Động",
+      "Giả Tưởng",
+      "Phiêu Lưu",
+      "Shonen"
+    ],
     "createdAt": 1793129132741,
     "slug": "toi-thang-cap-mot-minh",
     "releaseYear": 2024,
@@ -29,31 +34,16 @@
     "imageUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-gHSraOSa0nBG.jpg",
     "bannerUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg",
     "topOrder": 2,
-    "genres": ["Phiêu Lưu", "Giả Tưởng", "Chính Kịch"],
+    "genres": [
+      "Phiêu Lưu",
+      "Giả Tưởng",
+      "Chính Kịch"
+    ],
     "createdAt": 1793129100000,
     "slug": "phap-su-tien-tang",
     "releaseYear": 2023,
     "malScore": 9.3,
     "currentProgress": "Tập 28/28",
-    "username": "xu4ns0n"
-  },
-  {
-    "id": "anime_kimetsu_no_yaiba",
-    "title": "Thanh Gươm Diệt Quỷ: Đại Trụ Đặc Huấn",
-    "originTitle": "Kimetsu no Yaiba: Hashira Geiko-hen",
-    "category": "Anime",
-    "status": "Hoàn thành",
-    "rating": 9.5,
-    "description": "Tanjiro và Sát Quỷ Đội bước vào khóa huấn luyện khắc nghiệt nhất cùng các Đại Trụ để chuẩn bị cho trận quyết chiến cuối cùng tại Vô Hạn Thành chống lại Kibutsuji Muzan.",
-    "imageUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx166240-PBV7zukIHbc1.png",
-    "bannerUrl": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/166240-5c1h26Hn12Vz.jpg",
-    "topOrder": 3,
-    "genres": ["Hành Động", "Siêu Nhiên", "Lịch Sử", "Shonen"],
-    "createdAt": 1793129000000,
-    "slug": "thanh-guom-diet-quy-phan-4-dai-tru-dac-huan",
-    "releaseYear": 2024,
-    "malScore": 8.4,
-    "currentProgress": "Tập 8/8",
     "username": "xu4ns0n"
   },
   {
@@ -66,7 +56,12 @@
     "description": "Hành trình vĩ đại của Monkey D. Luffy và băng hải tặc Mũ Rơm trên Đại Hải Trình tìm kiếm kho báu huyền thoại One Piece để trở thành Vua Hải Tặc.",
     "imageUrl": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30013-oT7YguhEK1TE.jpg",
     "topOrder": 4,
-    "genres": ["Hành Động", "Phiêu Lưu", "Hài Hước", "Shonen"],
+    "genres": [
+      "Hành Động",
+      "Phiêu Lưu",
+      "Hài Hước",
+      "Shonen"
+    ],
     "createdAt": 1793128900000,
     "slug": "dao-hai-tac",
     "releaseYear": 1999,
@@ -75,4 +70,3 @@
     "username": "xu4ns0n"
   }
 ]
-

@@ -72,35 +72,44 @@ function onisanimeBackendPlugin(): Plugin {
           });
           const html = await response.text();
 
-          const listRegex = /<figure class="clearfix">[\s\S]*?<a title="([^"]+)" href="([^"]+)"[\s\S]*?<img [^>]*data-original="([^"]+)"[\s\S]*?<figcaption>[\s\S]*?<ul>([\s\S]*?)<\/ul>/g;
-          let match;
+          const blocks = html.split('<div class="item"');
           const items = [];
-          while ((match = listRegex.exec(html)) !== null) {
-            const rawHref = match[2];
-            const slugMatch = rawHref.match(/\/truyen-tranh\/([^/?#]+)/);
-            const slug = slugMatch ? slugMatch[1] : rawHref;
 
-            // Lấy chapter mới nhất trong ul
-            const chapMatch = match[4].match(/<a [^>]*>([^<]+)<\/a>/);
-            const latestChapter = chapMatch ? chapMatch[1].trim() : 'Mới cập nhật';
+          for (let i = 1; i < blocks.length; i++) {
+            const block = blocks[i];
+            const titleMatch = block.match(/<a [^>]*title="([^"]+)"[^>]*href="([^"]+)"/);
+            const imgMatch = block.match(/<img [^>]*(?:data-original|src)="([^"]+)"/);
+            const chapMatch = block.match(/<a [^>]*href="[^"]*\/chapter-[^"]*"[^>]*>([^<]+)<\/a>/) ||
+                             block.match(/<figcaption>[\s\S]*?<ul>[\s\S]*?<a [^>]*>([^<]+)<\/a>/);
 
-            const rawImg = match[3];
-            const originalThumb = rawImg.startsWith('http') ? rawImg : `https:${rawImg}`;
-            const thumbUrl = `/api/manga-image?url=${encodeURIComponent(originalThumb)}`;
+            if (titleMatch) {
+              const rawHref = titleMatch[2];
+              const slugMatch = rawHref.match(/\/truyen-tranh\/([^/?#]+)/);
+              const slug = slugMatch ? slugMatch[1] : rawHref;
 
-            items.push({
-              id: slug,
-              slug,
-              title: match[1].replace(/^Truyện tranh\s*/i, '').trim(),
-              thumbUrl,
-              status: type === 'hoan-thanh' ? 'Hoàn thành' : 'Đang phát hành',
-              latestChapter,
-              genres: ['Manga', 'Việt Hóa']
-            });
+              const title = titleMatch[1].replace(/^Truyện tranh\s*/i, '').trim();
+              const latestChapter = chapMatch ? chapMatch[1].trim() : 'Mới cập nhật';
+
+              const rawImg = imgMatch ? imgMatch[1] : '';
+              const originalThumb = rawImg.startsWith('http') ? rawImg : `https:${rawImg}`;
+              const thumbUrl = `/api/manga-image?url=${encodeURIComponent(originalThumb)}`;
+
+              items.push({
+                id: slug,
+                slug,
+                title,
+                thumbUrl,
+                status: 'Đang phát hành',
+                latestChapter,
+                genres: ['Manga', 'Việt Hóa']
+              });
+            }
           }
 
           // Kiểm tra tổng số trang
-          const totalPagesMatch = html.match(/\/([0-9]+)"[^>]*>Cuối/i) || html.match(/page=([0-9]+)[^>]*>Cuối/i);
+          const totalPagesMatch = html.match(/\/([0-9]+)"[^>]*>Cuối/i) ||
+                                  html.match(/page=([0-9]+)[^>]*>Cuối/i) ||
+                                  html.match(/page=([0-9]+)/);
           const totalPages = totalPagesMatch ? parseInt(totalPagesMatch[1], 10) : 50;
 
           res.statusCode = 200;
@@ -143,18 +152,57 @@ function onisanimeBackendPlugin(): Plugin {
 
           // Thumb
           const thumbMatch = html.match(/<div class="col-image">\s*<img [^>]*src="([^"]+)"/);
-          const thumbUrl = thumbMatch ? (thumbMatch[1].startsWith('http') ? thumbMatch[1] : `https:${thumbMatch[1]}`) : '';
+          const rawThumb = thumbMatch ? thumbMatch[1] : '';
+          const thumbUrl = rawThumb
+            ? `/api/manga-image?url=${encodeURIComponent(rawThumb.startsWith('http') ? rawThumb : `https:${rawThumb}`)}`
+            : '';
 
-          // Chapters
-          const chRegex = /<div class="col-xs-5 chapter">\s*<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
-          let chMatch;
-          const chapters = [];
-          while ((chMatch = chRegex.exec(html)) !== null) {
-            chapters.push({
-              chapter_name: chMatch[2].replace(/^Chapter\s*/i, '').trim(),
-              chapter_title: chMatch[2].trim(),
-              chapter_api_data: chMatch[1]
-            });
+          // Trích xuất comicId & comicSlug để gọi API lấy TRỌN BỘ 100% chapter
+          const cIdMatch = html.match(/gOpts\.comicId\s*=\s*['"]?([0-9]+)['"]?/) ||
+                           html.match(/comicId\s*[:=]\s*['"]?([0-9]+)['"]?/) ||
+                           slug.match(/-([0-9]+)$/);
+          const cSlugMatch = html.match(/gOpts\.comicSlug\s*=\s*['"]([^'"]+)['"]/);
+
+          const comicId = cIdMatch ? cIdMatch[1] : '';
+          const comicSlug = cSlugMatch ? cSlugMatch[1] : slug.replace(/-[0-9]+$/, '');
+
+          let chapters: Array<{ chapter_name: string; chapter_title: string; chapter_api_data: string }> = [];
+
+          // Gọi API ChapterList để lấy TRỌN BỘ (hàng trăm đến hàng ngàn chapter)
+          if (comicId && comicSlug) {
+            try {
+              const fullApiUrl = `${NETTRUYEN_HOST}/Comic/Services/ComicService.asmx/ChapterList?slug=${encodeURIComponent(comicSlug)}&comicId=${encodeURIComponent(comicId)}`;
+              const chapApiRes = await fetch(fullApiUrl, {
+                headers: {
+                  'User-Agent': USER_AGENT,
+                  'Referer': fetchUrl,
+                  'X-Requested-With': 'XMLHttpRequest'
+                }
+              });
+              if (chapApiRes.ok) {
+                const chapData = await chapApiRes.json();
+                if (Array.isArray(chapData?.data) && chapData.data.length > 0) {
+                  chapters = chapData.data.map((item: any) => ({
+                    chapter_name: (item.chapter_name || '').replace(/^Chapter\s*/i, '').trim(),
+                    chapter_title: item.chapter_name || `Chapter ${item.chapter_num}`,
+                    chapter_api_data: `${NETTRUYEN_HOST}/truyen-tranh/${comicSlug}/${item.chapter_slug}/${item.chapter_id}`
+                  }));
+                }
+              }
+            } catch (_) {}
+          }
+
+          // Fallback: nếu gọi API ChapterList không được, lấy từ HTML ban đầu
+          if (chapters.length === 0) {
+            const chRegex = /<div class="col-xs-5 chapter">\s*<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
+            let chMatch;
+            while ((chMatch = chRegex.exec(html)) !== null) {
+              chapters.push({
+                chapter_name: chMatch[2].replace(/^Chapter\s*/i, '').trim(),
+                chapter_title: chMatch[2].trim(),
+                chapter_api_data: chMatch[1]
+              });
+            }
           }
 
           res.statusCode = 200;
@@ -171,7 +219,7 @@ function onisanimeBackendPlugin(): Plugin {
         } catch (err: any) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: err.message }));
+          res.end(JSON.stringify({ error: err.message, chapters: [] }));
         }
       });
 
