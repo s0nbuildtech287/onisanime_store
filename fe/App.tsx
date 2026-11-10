@@ -21,7 +21,10 @@ import {
   Compass,
   Clock,
   RotateCcw,
-  History
+  History,
+  LogIn,
+  LogOut,
+  ShieldCheck
 } from 'lucide-react';
 import {
   AnimeCardItem,
@@ -44,6 +47,7 @@ import AnimePlayerModal, { PlayerTargetAnime } from './components/AnimePlayerMod
 import MangaReaderModal from './components/MangaReaderModal';
 import Anime3DShowcase from './components/Anime3DShowcase';
 import BrandLogo from './components/BrandLogo';
+import LoginModal from './components/LoginModal';
 
 const WEEKDAYS = [
   { id: 'monday', label: 'Thứ 2' },
@@ -140,6 +144,24 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState('');
 
+  // Authentication State (Mục đích nghiên cứu: Chỉ cho phép xem/đọc sau khi đăng nhập)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('onisanime_session') === 'true';
+  });
+  const [username, setUsername] = useState<string>(() => {
+    return localStorage.getItem('onisanime_user') || 'xu4ns0n';
+  });
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [loginReason, setLoginReason] = useState<string | undefined>(undefined);
+
+  const handleLogout = () => {
+    localStorage.removeItem('onisanime_session');
+    localStorage.removeItem('onisanime_user');
+    setIsLoggedIn(false);
+    setPlayingAnime(null);
+    setReadingMangaSlug(null);
+  };
+
   // Chế độ duyệt Anime: 'anilist' (Chuẩn Otaku TV/Movie/Season/Top) hoặc 'vn' (KKPhim/NguonC + Donghua 3D)
   const [animeBrowseMode, setAnimeBrowseMode] = useState<'anilist' | 'vn'>('anilist');
 
@@ -203,6 +225,11 @@ const App: React.FC = () => {
   // Tự động mở Anime / Manga khi người dùng truy cập link chia sẻ (?watch=... hoặc ?read=...)
   useEffect(() => {
     if (watchParam && (!playingAnime || (playingAnime.slug !== watchParam && `anilist_${playingAnime.anilistId}` !== watchParam))) {
+      if (!isLoggedIn) {
+        setLoginReason('Vui lòng đăng nhập để mở xem bộ Anime từ liên kết chia sẻ này.');
+        setIsLoginOpen(true);
+        return;
+      }
       if (watchParam.startsWith('anilist_')) {
         const idNum = parseInt(watchParam.replace('anilist_', ''), 10);
         if (!isNaN(idNum)) {
@@ -231,13 +258,18 @@ const App: React.FC = () => {
         });
       }
     }
-  }, [watchParam]);
+  }, [watchParam, isLoggedIn]);
 
   useEffect(() => {
     if (readParam && readingMangaSlug !== readParam) {
+      if (!isLoggedIn) {
+        setLoginReason('Vui lòng đăng nhập để đọc bộ Truyện Tranh từ liên kết chia sẻ này.');
+        setIsLoginOpen(true);
+        return;
+      }
       setReadingMangaSlug(readParam);
     }
-  }, [readParam]);
+  }, [readParam, isLoggedIn]);
 
   // Load Live Global Ranking Data (Anime hoặc Manga)
   useEffect(() => {
@@ -366,6 +398,11 @@ const App: React.FC = () => {
   }, [activeTab, mangaType, mangaPage, submittedSearch]);
 
   const handleSaveToWatchlist = (item: MediaItem) => {
+    if (!isLoggedIn) {
+      setLoginReason('Bạn đang ở chế độ Xem Trải Nghiệm. Vui lòng đăng nhập để lưu phim/truyện vào Tủ cá nhân.');
+      setIsLoginOpen(true);
+      return;
+    }
     setWatchlist((prev) => {
       const exists = prev.some(
         (i) => (item.slug && i.slug === item.slug) || i.title === item.title
@@ -411,6 +448,11 @@ const App: React.FC = () => {
   };
 
   const handleOpenAnime = (target: PlayerTargetAnime) => {
+    if (!isLoggedIn) {
+      setLoginReason('Bạn đang ở chế độ Xem Trải Nghiệm. Vui lòng đăng nhập để mở trình phát Anime (Phục vụ mục đích nghiên cứu).');
+      setIsLoginOpen(true);
+      return;
+    }
     setPlayingAnime(target);
     const watchKey = target.slug || (target.anilistId ? `anilist_${target.anilistId}` : '');
     if (watchKey) {
@@ -439,6 +481,11 @@ const App: React.FC = () => {
   };
 
   const handleOpenManga = (slug: string) => {
+    if (!isLoggedIn) {
+      setLoginReason('Bạn đang ở chế độ Xem Trải Nghiệm. Vui lòng đăng nhập để mở trình đọc Manga (Phục vụ mục đích nghiên cứu).');
+      setIsLoginOpen(true);
+      return;
+    }
     setReadingMangaSlug(slug);
     setSearchParams(
       (prev) => {
@@ -488,10 +535,22 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#06070d] text-slate-100">
         <Anime3DShowcase
+          isLoggedIn={isLoggedIn}
+          username={username}
+          onOpenLogin={() => {
+            setLoginReason(undefined);
+            setIsLoginOpen(true);
+          }}
+          onLogout={handleLogout}
           onEnterApp={(tab) => {
             goToTab(tab || 'anime');
           }}
           onPlayFeaturedAnime={(anime) => {
+            if (!isLoggedIn) {
+              setLoginReason('Vui lòng đăng nhập để phát video Anime này (Hoặc bấm "Xem Trải Nghiệm" để dạo quanh giao diện).');
+              setIsLoginOpen(true);
+              return;
+            }
             navigate('/anime');
             handleOpenAnime(anime);
           }}
@@ -504,6 +563,15 @@ const App: React.FC = () => {
           onSaveToWatchlist={handleSaveToWatchlist}
           onSwitchAnime={handleOpenAnime}
           onHistoryUpdated={() => setWatchHistory(watchHistoryApi.getAll())}
+        />
+        <LoginModal
+          isOpen={isLoginOpen}
+          onClose={() => setIsLoginOpen(false)}
+          onLoginSuccess={(u) => {
+            setIsLoggedIn(true);
+            setUsername(u);
+          }}
+          reasonMessage={loginReason}
         />
       </div>
     );
@@ -634,6 +702,36 @@ const App: React.FC = () => {
               Tìm
             </button>
           </form>
+
+          {/* Trạng thái Đăng nhập / Chế độ Trải nghiệm */}
+          <div className="flex items-center gap-2 shrink-0">
+            {isLoggedIn ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs font-extrabold">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{username}</span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-white/10 transition-all"
+                  title="Đăng xuất"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setLoginReason('Website phục vụ mục đích nghiên cứu kỹ thuật. Đăng nhập để mở khóa xem Anime & đọc Manga.');
+                  setIsLoginOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white text-xs font-extrabold shadow-lg shadow-pink-500/20 transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Đăng Nhập</span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1829,6 +1927,16 @@ const App: React.FC = () => {
         targetMangaSlug={readingMangaSlug}
         watchlist={watchlist}
         onSaveToWatchlist={handleSaveToWatchlist}
+      />
+
+      <LoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+        onLoginSuccess={(u) => {
+          setIsLoggedIn(true);
+          setUsername(u);
+        }}
+        reasonMessage={loginReason}
       />
     </div>
   );

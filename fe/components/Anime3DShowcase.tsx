@@ -9,7 +9,11 @@ import {
   Trophy,
   Tv,
   Zap,
-  Calendar
+  Calendar,
+  LogIn,
+  LogOut,
+  Eye,
+  ShieldCheck
 } from 'lucide-react';
 import { AppTab } from '../types';
 import { PlayerTargetAnime } from './AnimePlayerModal';
@@ -18,6 +22,10 @@ import BrandLogo from './BrandLogo';
 interface Anime3DShowcaseProps {
   onEnterApp: (tab?: AppTab) => void;
   onPlayFeaturedAnime: (anime: PlayerTargetAnime) => void;
+  isLoggedIn: boolean;
+  username?: string;
+  onOpenLogin: () => void;
+  onLogout?: () => void;
 }
 
 const FLOATING_3D_CARDS = [
@@ -104,7 +112,11 @@ const POSTERS_ROW_3 = [
 
 const Anime3DShowcase: React.FC<Anime3DShowcaseProps> = ({
   onEnterApp,
-  onPlayFeaturedAnime
+  onPlayFeaturedAnime,
+  isLoggedIn,
+  username,
+  onOpenLogin,
+  onLogout
 }) => {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -234,13 +246,50 @@ const Anime3DShowcase: React.FC<Anime3DShowcaseProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={() => onEnterApp('anime')}
-          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-pink-500 text-white text-xs font-extrabold border border-white/20 backdrop-blur-md transition-all flex items-center gap-1.5"
-        >
-          <span>Bỏ qua Intro</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {isLoggedIn ? (
+            <>
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-extrabold backdrop-blur-md">
+                <ShieldCheck className="w-4 h-4" />
+                <span>{username || 'xu4ns0n'}</span>
+              </div>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="px-3 py-2 rounded-xl bg-white/10 hover:bg-rose-500/25 text-slate-300 hover:text-rose-300 text-xs font-bold border border-white/15 backdrop-blur-md transition-all flex items-center gap-1.5"
+                  title="Đăng xuất"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Đăng xuất</span>
+                </button>
+              )}
+              <button
+                onClick={() => onEnterApp('anime')}
+                className="px-4 py-2 rounded-xl bg-pink-500 hover:bg-pink-400 text-white text-xs font-extrabold shadow-lg transition-all flex items-center gap-1.5"
+              >
+                <span>Vào Trang Chính</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onOpenLogin}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white text-xs font-extrabold shadow-lg shadow-pink-500/25 transition-all flex items-center gap-1.5"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Đăng Nhập</span>
+              </button>
+              <button
+                onClick={() => onEnterApp('anime')}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold border border-white/20 backdrop-blur-md transition-all flex items-center gap-1.5"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Xem Trải Nghiệm</span>
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* ================= 4. CENTER HERO GLASS PANEL (3D TILT) ================= */}
@@ -272,25 +321,46 @@ const Anime3DShowcase: React.FC<Anime3DShowcaseProps> = ({
             </p>
           </div>
 
-          {/* 3 Nút Hành Động Chính */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-            <button
-              onClick={() => onEnterApp('anime')}
-              className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-7 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white font-black text-sm shadow-2xl shadow-pink-500/40 transition-all hover:scale-105 cursor-pointer"
-            >
-              <Tv className="w-5 h-5" />
-              <span>KHÁM PHÁ ANIME NGAY</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+          {/* Các Nút Hành Động Chính */}
+          {isLoggedIn ? (
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => onEnterApp('anime')}
+                className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-7 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white font-black text-sm shadow-2xl shadow-pink-500/40 transition-all hover:scale-105 cursor-pointer"
+              >
+                <Tv className="w-5 h-5" />
+                <span>KHÁM PHÁ ANIME NGAY</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
 
-            <button
-              onClick={() => onEnterApp('manga')}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/25 transition-all hover:scale-105 cursor-pointer"
-            >
-              <BookOpen className="w-5 h-5" />
-              <span>ĐỌC MANGA</span>
-            </button>
-          </div>
+              <button
+                onClick={() => onEnterApp('manga')}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/25 transition-all hover:scale-105 cursor-pointer"
+              >
+                <BookOpen className="w-5 h-5" />
+                <span>ĐỌC MANGA</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                onClick={onOpenLogin}
+                className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-7 py-4 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white font-black text-sm shadow-2xl shadow-pink-500/40 transition-all hover:scale-105 cursor-pointer"
+              >
+                <LogIn className="w-5 h-5" />
+                <span>ĐĂNG NHẬP ĐỂ XEM & ĐỌC</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => onEnterApp('anime')}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/25 text-white font-extrabold text-sm backdrop-blur-md transition-all hover:scale-105 cursor-pointer"
+              >
+                <Eye className="w-5 h-5 text-cyan-300" />
+                <span>VÀO XEM TRẢI NGHIỆM</span>
+              </button>
+            </div>
+          )}
 
           {/* Quick Links phụ */}
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs font-bold text-slate-300">
