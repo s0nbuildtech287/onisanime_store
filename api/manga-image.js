@@ -1,5 +1,6 @@
 const NETTRUYEN_REFERER = 'https://nettruyenar.com/';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,16 +13,21 @@ export default async function handler(req, res) {
   try {
     const urlObj = new URL(req.url || '', 'http://localhost');
     const targetUrl = req.query?.url || urlObj.searchParams.get('url');
-    if (!targetUrl) {
+    if (!targetUrl || !/^https?:\/\//i.test(String(targetUrl))) {
       res.status(400).end();
       return;
     }
 
-    const imgRes = await fetch(targetUrl, {
+    const urlStr = String(targetUrl);
+    const isMangaDex = /mangadex\.(org|network)/i.test(urlStr);
+
+    const imgRes = await fetch(urlStr, {
       headers: {
         'User-Agent': USER_AGENT,
-        'Referer': NETTRUYEN_REFERER
-      }
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        Referer: isMangaDex ? 'https://mangadex.org/' : NETTRUYEN_REFERER
+      },
+      signal: AbortSignal.timeout(9000)
     });
 
     if (!imgRes.ok) {

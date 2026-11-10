@@ -876,7 +876,7 @@ export async function resolveMultiServerStreams(target: {
 const POPULAR_MANGAS: MangaCardItem[] = [
   {
     id: 'manga-one-piece',
-    slug: 'one-piece',
+    slug: 'one-piece-128',
     title: 'Đảo Hải Tặc (One Piece)',
     originTitle: 'One Piece',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30013-oT7YguhEK1TE.jpg',
@@ -909,7 +909,7 @@ const POPULAR_MANGAS: MangaCardItem[] = [
   },
   {
     id: 'manga-solo-leveling',
-    slug: 'solo-leveling',
+    slug: 'solo-leveling-ragnarok-25356',
     title: 'Tôi Thăng Cấp Một Mình (Solo Leveling)',
     originTitle: 'Na Honjaman Level Up',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105398-b673Wkb22frd.jpg',
@@ -936,7 +936,7 @@ const POPULAR_MANGAS: MangaCardItem[] = [
   },
   {
     id: 'manga-jujutsu-kaisen',
-    slug: 'jujutsu-kaisen',
+    slug: 'jujutsu-kaisen-chu-thuat-hoi-chien-5058',
     title: 'Chú Thuật Hồi Chiến (Jujutsu Kaisen)',
     originTitle: 'Jujutsu Kaisen',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx101517-5eXfWf6jP7o8.jpg',
@@ -957,7 +957,7 @@ const POPULAR_MANGAS: MangaCardItem[] = [
   },
   {
     id: 'manga-frieren',
-    slug: 'sousou-no-frieren',
+    slug: 'sousou-no-frieren-10247',
     title: 'Pháp Sư Tiễn Táng (Sousou no Frieren)',
     originTitle: 'Sousou no Frieren',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx118586-C3qB82k9YI9w.jpg',
@@ -978,7 +978,7 @@ const POPULAR_MANGAS: MangaCardItem[] = [
   },
   {
     id: 'manga-conan',
-    slug: 'tham-tu-lung-danh-conan',
+    slug: 'conan-25867',
     title: 'Thám Tử Lừng Danh Conan',
     originTitle: 'Detective Conan',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30006-kS9m5XbO8uQ2.jpg',
@@ -999,7 +999,7 @@ const POPULAR_MANGAS: MangaCardItem[] = [
   },
   {
     id: 'manga-chainsaw-man',
-    slug: 'chainsaw-man',
+    slug: 'chainsaw-man-25908',
     title: 'Người Cưa (Chainsaw Man)',
     originTitle: 'Chainsaw Man',
     thumbUrl: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105778-5eTf7rU9Wl6q.jpg',
@@ -1049,7 +1049,7 @@ export const mangaApi = {
       const res = await fetch(`/api/manga/detail?slug=${encodeURIComponent(slug)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.title) {
+        if (data && data.title && Array.isArray(data.chapters) && data.chapters.length > 0) {
           return data;
         }
       }
