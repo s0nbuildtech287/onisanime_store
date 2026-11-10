@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e1135" />
+      <stop offset="100%" stop-color="#070913" />
+    </linearGradient>
+    <linearGradient id="neonGrad" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f43f5e" />
+      <stop offset="50%" stop-color="#ec4899" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <linearGradient id="hornGrad" x1="20" y1="15" x2="80" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fdf2f8" />
+      <stop offset="100%" stop-color="#f472b6" />
+    </linearGradient>
+    <linearGradient id="playGrad" x1="35" y1="35" x2="70" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ff6b9d" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+  </defs>
+
+  <!-- Nền bo góc chuẩn App Icon -->
+  <rect x="4" y="4" width="92" height="92" rx="24" fill="url(#bgGrad)" stroke="url(#neonGrad)" stroke-width="4.5" />
+
+  <!-- Sừng Oni Trái -->
+  <path d="M22 44 C18 26, 26 16, 36 14 C31 24, 31 32, 36 38 Z" fill="url(#hornGrad)" />
+  <!-- Sừng Oni Phải -->
+  <path d="M78 44 C82 26, 74 16, 64 14 C69 24, 69 32, 64 38 Z" fill="url(#hornGrad)" />
+
+  <!-- Vòng hào quang / Mặt nạ cách điệu -->
+  <circle cx="50" cy="54" r="26" fill="#0f1426" stroke="url(#neonGrad)" stroke-width="3.5" />
+
+  <!-- Nút Play chính giữa -->
+  <path d="M43 42.5 L64 54 L43 65.5 Z" fill="url(#playGrad)" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round" />
+
+  <!-- Ngôi sao Otaku lấp lánh -->
+  <path d="M80 20 L82 25 L87 27 L82 29 L80 34 L78 29 L73 27 L78 25 Z" fill="#fde047" />
+</svg>
+

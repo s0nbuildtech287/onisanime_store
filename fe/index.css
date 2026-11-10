@@ -71,3 +71,78 @@ h1, h2, h3, .font-heading {
   animation: shimmer 1.6s infinite;
 }
 
+/* ================= 3D INTRO SHOWCASE & POSTER MARQUEE ================= */
+@keyframes marquee-horizontal-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marquee-horizontal-right {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-horizontal-left 55s linear infinite;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-horizontal-right 62s linear infinite;
+}
+
+.perspective-cinema {
+  perspective: 1400px;
+  perspective-origin: center center;
+}
+
+.luxury-otaku-glass {
+  background: rgba(9, 11, 22, 0.78);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 25px 70px -15px rgba(0, 0, 0, 0.9),
+    0 0 50px -10px rgba(236, 72, 153, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+@keyframes fly-card-1 {
+  0%, 100% { transform: translate3d(0, 0, 30px) rotateX(8deg) rotateY(-12deg) rotateZ(-3deg); }
+  50% { transform: translate3d(-10px, -22px, 75px) rotateX(12deg) rotateY(-6deg) rotateZ(2deg); }
+}
+
+@keyframes fly-card-2 {
+  0%, 100% { transform: translate3d(0, 0, 40px) rotateX(-6deg) rotateY(14deg) rotateZ(4deg); }
+  50% { transform: translate3d(14px, -18px, 85px) rotateX(-10deg) rotateY(7deg) rotateZ(-2deg); }
+}
+
+@keyframes fly-card-3 {
+  0%, 100% { transform: translate3d(0, 0, 25px) rotateX(10deg) rotateY(10deg) rotateZ(-4deg); }
+  50% { transform: translate3d(10px, -26px, 65px) rotateX(5deg) rotateY(14deg) rotateZ(1deg); }
+}
+
+@keyframes fly-card-4 {
+  0%, 100% { transform: translate3d(0, 0, 35px) rotateX(-8deg) rotateY(-11deg) rotateZ(3deg); }
+  50% { transform: translate3d(-14px, 16px, 70px) rotateX(-4deg) rotateY(-7deg) rotateZ(-2deg); }
+}
+
+.animate-fly-3d-1 {
+  animation: fly-card-1 7s ease-in-out infinite;
+  transform-style: preserve-3d;
+}
+.animate-fly-3d-2 {
+  animation: fly-card-2 8.2s ease-in-out infinite 0.8s;
+  transform-style: preserve-3d;
+}
+.animate-fly-3d-3 {
+  animation: fly-card-3 9s ease-in-out infinite 0.4s;
+  transform-style: preserve-3d;
+}
+.animate-fly-3d-4 {
+  animation: fly-card-4 7.5s ease-in-out infinite 1.4s;
+  transform-style: preserve-3d;
+}

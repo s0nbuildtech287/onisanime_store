@@ -13,7 +13,8 @@ import {
   ZoomOut,
   List,
   Sidebar as SidebarIcon,
-  Search
+  Search,
+  Share2
 } from 'lucide-react';
 import {
   MangaCardItem,
@@ -56,6 +57,7 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Tải thông tin truyện & danh sách Chapter khi mở modal
   useEffect(() => {
@@ -281,6 +283,19 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
               <ZoomIn className="w-4 h-4" />
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href).catch(() => {});
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-white/5 hover:bg-cyan-500/20 text-cyan-300 border-white/10 transition-all"
+            title="Copy link chia sẻ truyện này"
+          >
+            {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+            <span className="hidden md:inline">{copiedLink ? 'Đã chép' : 'Chia sẻ'}</span>
+          </button>
 
           <button
             onClick={handleBookmark}

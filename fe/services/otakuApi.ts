@@ -183,6 +183,54 @@ export const anilistApi = {
     }
   },
 
+  // Lấy thông tin cơ bản của 1 bộ Anime theo anilistId (hỗ trợ share link ?watch=anilist_...)
+  getAnimeById: async (anilistId: number): Promise<AnimeCardItem | null> => {
+    try {
+      const query = `
+        query ($id: Int) {
+          Media(id: $id, type: ANIME) {
+            id
+            format
+            seasonYear
+            episodes
+            averageScore
+            genres
+            synonyms
+            description(asHtml: false)
+            title { romaji english native }
+            coverImage { extraLarge large }
+            bannerImage
+            studios(isMain: true) { nodes { name } }
+            trailer { id site }
+          }
+        }
+      `;
+      const json = await queryAniList(query, { id: anilistId });
+      const m = json?.data?.Media;
+      if (!m) return null;
+      return {
+        id: `anilist_${m.id}`,
+        slug: '',
+        anilistId: m.id,
+        title: m.title?.english || m.title?.romaji || 'Anime',
+        originTitle: m.title?.romaji,
+        posterUrl: m.coverImage?.extraLarge || m.coverImage?.large || '',
+        bannerUrl: m.bannerImage || m.coverImage?.extraLarge || '',
+        year: m.seasonYear,
+        format: m.format,
+        malScore: m.averageScore ? Math.round((m.averageScore / 10) * 10) / 10 : 8.5,
+        genres: m.genres || [],
+        synopsis: (m.description || '').replace(/<[^>]+>/g, ''),
+        studios: (m.studios?.nodes || []).map((s: any) => s.name),
+        synonyms: m.synonyms || [],
+        trailerUrl: m.trailer?.site === 'youtube' && m.trailer?.id ? `https://www.youtube.com/embed/${m.trailer.id}` : undefined,
+        source: 'anilist'
+      };
+    } catch (_) {
+      return null;
+    }
+  },
+
   // Lấy Chi tiết & Các Phần Liên Quan (Season 1 -> Movie -> Season 2)
   getAnimeRelations: async (anilistId: number): Promise<{
     relations: AnimeRelationItem[];

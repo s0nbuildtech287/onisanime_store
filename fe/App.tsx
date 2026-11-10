@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Play,
   BookOpen,
@@ -41,6 +42,8 @@ import {
 } from './services/otakuApi';
 import AnimePlayerModal, { PlayerTargetAnime } from './components/AnimePlayerModal';
 import MangaReaderModal from './components/MangaReaderModal';
+import Anime3DShowcase from './components/Anime3DShowcase';
+import BrandLogo from './components/BrandLogo';
 
 const WEEKDAYS = [
   { id: 'monday', label: 'Thứ 2' },
@@ -105,7 +108,35 @@ function formatCountdown(seconds?: number): string {
 }
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AppTab>('anime');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const watchParam = searchParams.get('watch');
+  const readParam = searchParams.get('read');
+
+  const showIntro =
+    (location.pathname === '/' || location.pathname === '/intro') &&
+    !watchParam &&
+    !readParam;
+
+  const activeTab: AppTab = location.pathname.startsWith('/schedule')
+    ? 'schedule'
+    : location.pathname.startsWith('/manga')
+    ? 'manga'
+    : location.pathname.startsWith('/watchlist')
+    ? 'watchlist'
+    : location.pathname.startsWith('/ranking')
+    ? 'ranking'
+    : 'anime';
+
+  const goToTab = useCallback(
+    (tab: AppTab) => {
+      navigate('/' + tab);
+    },
+    [navigate]
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState('');
 
@@ -168,6 +199,45 @@ const App: React.FC = () => {
   useEffect(() => {
     storageApi.getAll().then(setWatchlist);
   }, []);
+
+  // Tự động mở Anime / Manga khi người dùng truy cập link chia sẻ (?watch=... hoặc ?read=...)
+  useEffect(() => {
+    if (watchParam && (!playingAnime || (playingAnime.slug !== watchParam && `anilist_${playingAnime.anilistId}` !== watchParam))) {
+      if (watchParam.startsWith('anilist_')) {
+        const idNum = parseInt(watchParam.replace('anilist_', ''), 10);
+        if (!isNaN(idNum)) {
+          anilistApi.getAnimeById(idNum).then((item) => {
+            if (item) {
+              setPlayingAnime({
+                anilistId: item.anilistId,
+                title: item.title,
+                originTitle: item.originTitle,
+                synonyms: item.synonyms,
+                posterUrl: item.posterUrl,
+                bannerUrl: item.bannerUrl,
+                synopsis: item.synopsis,
+                year: item.year,
+                malScore: item.malScore,
+                studios: item.studios,
+                trailerUrl: item.trailerUrl
+              });
+            }
+          });
+        }
+      } else {
+        setPlayingAnime({
+          slug: watchParam,
+          title: watchParam.replace(/-/g, ' ')
+        });
+      }
+    }
+  }, [watchParam]);
+
+  useEffect(() => {
+    if (readParam && readingMangaSlug !== readParam) {
+      setReadingMangaSlug(readParam);
+    }
+  }, [readParam]);
 
   // Load Live Global Ranking Data (Anime hoặc Manga)
   useEffect(() => {
@@ -324,7 +394,7 @@ const App: React.FC = () => {
     setMangaPage(1);
     setSubmittedSearch(searchQuery);
     if (activeTab !== 'anime' && activeTab !== 'manga') {
-      setActiveTab('anime');
+      goToTab('anime');
     }
   };
 
@@ -340,8 +410,61 @@ const App: React.FC = () => {
     setAnimePage(1);
   };
 
+  const handleOpenAnime = (target: PlayerTargetAnime) => {
+    setPlayingAnime(target);
+    const watchKey = target.slug || (target.anilistId ? `anilist_${target.anilistId}` : '');
+    if (watchKey) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('watch', watchKey);
+          next.delete('read');
+          return next;
+        },
+        { replace: true }
+      );
+    }
+  };
+
+  const handleCloseAnime = () => {
+    setPlayingAnime(null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('watch');
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
+  const handleOpenManga = (slug: string) => {
+    setReadingMangaSlug(slug);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('read', slug);
+        next.delete('watch');
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
+  const handleCloseManga = () => {
+    setReadingMangaSlug(null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('read');
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
   const openAnimePlayer = (anime: AnimeCardItem) => {
-    setPlayingAnime({
+    handleOpenAnime({
       slug: anime.slug || undefined,
       anilistId: anime.anilistId,
       title: anime.title,
@@ -360,6 +483,32 @@ const App: React.FC = () => {
   const heroSlides = animeList.slice(0, 5);
   const featuredAnime = heroSlides[heroIdx] || animeList[0];
 
+  // ================= 0. MÀN HÌNH INTRO 3D MÃN NHÃN =================
+  if (showIntro) {
+    return (
+      <div className="min-h-screen bg-[#06070d] text-slate-100">
+        <Anime3DShowcase
+          onEnterApp={(tab) => {
+            goToTab(tab || 'anime');
+          }}
+          onPlayFeaturedAnime={(anime) => {
+            navigate('/anime');
+            handleOpenAnime(anime);
+          }}
+        />
+        <AnimePlayerModal
+          isOpen={!!playingAnime}
+          onClose={handleCloseAnime}
+          targetAnime={playingAnime}
+          watchlist={watchlist}
+          onSaveToWatchlist={handleSaveToWatchlist}
+          onSwitchAnime={handleOpenAnime}
+          onHistoryUpdated={() => setWatchHistory(watchHistoryApi.getAll())}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#06070d] text-slate-100 flex flex-col">
       {/* ================= HEADER & NAVIGATION ================= */}
@@ -368,14 +517,12 @@ const App: React.FC = () => {
           {/* Brand Logo */}
           <div
             onClick={() => {
-              setActiveTab('anime');
+              goToTab('anime');
               handleResetAnimeFilters();
             }}
             className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-pink-500 via-rose-500 to-violet-600 flex items-center justify-center shadow-lg shadow-pink-500/25 group-hover:scale-105 transition-all">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
+            <BrandLogo className="w-11 h-11 shadow-lg shadow-pink-500/25 rounded-2xl group-hover:scale-105 transition-all" />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-heading text-lg font-black tracking-tight text-white">
@@ -394,7 +541,7 @@ const App: React.FC = () => {
           {/* Navigation Tabs */}
           <nav className="flex items-center gap-1.5 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10 overflow-x-auto">
             <button
-              onClick={() => setActiveTab('anime')}
+              onClick={() => goToTab('anime')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
                 activeTab === 'anime'
                   ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-lg shadow-pink-500/25'
@@ -406,7 +553,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('schedule')}
+              onClick={() => goToTab('schedule')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
                 activeTab === 'schedule'
                   ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-lg shadow-pink-500/25'
@@ -418,7 +565,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('manga')}
+              onClick={() => goToTab('manga')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
                 activeTab === 'manga'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 shadow-lg shadow-emerald-500/25'
@@ -430,7 +577,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('watchlist')}
+              onClick={() => goToTab('watchlist')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
                 activeTab === 'watchlist'
                   ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-lg'
@@ -442,7 +589,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveTab('ranking')}
+              onClick={() => goToTab('ranking')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
                 activeTab === 'ranking'
                   ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 shadow-lg'
@@ -624,7 +771,7 @@ const App: React.FC = () => {
                     <div
                       key={h.id}
                       onClick={() =>
-                        setPlayingAnime({
+                        handleOpenAnime({
                           slug: h.slug,
                           anilistId: h.anilistId,
                           title: h.title,
@@ -1156,7 +1303,7 @@ const App: React.FC = () => {
                         <div className="pt-2 flex items-center gap-2">
                           <button
                             onClick={() =>
-                              setPlayingAnime({
+                              handleOpenAnime({
                                 anilistId: item.anilistId,
                                 title: item.title,
                                 originTitle: item.title_english,
@@ -1229,7 +1376,7 @@ const App: React.FC = () => {
                 {mangaList.map((manga) => (
                   <div
                     key={manga.id}
-                    onClick={() => setReadingMangaSlug(manga.slug)}
+                    onClick={() => handleOpenManga(manga.slug)}
                     className="group rounded-2xl overflow-hidden bg-[#0b121c] border border-white/10 hover:border-emerald-500/60 transition-all cursor-pointer flex flex-col shadow-lg hover:-translate-y-1"
                   >
                     <div className="relative aspect-[2/3] w-full overflow-hidden bg-slate-900">
@@ -1345,9 +1492,9 @@ const App: React.FC = () => {
                     key={item.id}
                     onClick={() => {
                       if (isManga && item.slug) {
-                        setReadingMangaSlug(item.slug);
+                        handleOpenManga(item.slug);
                       } else {
-                        setPlayingAnime({
+                        handleOpenAnime({
                           slug: item.slug?.startsWith('anilist_') ? undefined : item.slug,
                           anilistId: item.slug?.startsWith('anilist_')
                             ? parseInt(item.slug.replace('anilist_', ''), 10)
@@ -1535,7 +1682,7 @@ const App: React.FC = () => {
                   if (isAnime) {
                     openAnimePlayer(item as AnimeCardItem);
                   } else {
-                    setReadingMangaSlug((item as MangaCardItem).slug);
+                    handleOpenManga((item as MangaCardItem).slug);
                   }
                 };
 
@@ -1668,17 +1815,17 @@ const App: React.FC = () => {
       {/* ================= MODALS ================= */}
       <AnimePlayerModal
         isOpen={!!playingAnime}
-        onClose={() => setPlayingAnime(null)}
+        onClose={handleCloseAnime}
         targetAnime={playingAnime}
         watchlist={watchlist}
         onSaveToWatchlist={handleSaveToWatchlist}
-        onSwitchAnime={(nextAnime) => setPlayingAnime(nextAnime)}
+        onSwitchAnime={handleOpenAnime}
         onHistoryUpdated={() => setWatchHistory(watchHistoryApi.getAll())}
       />
 
       <MangaReaderModal
         isOpen={!!readingMangaSlug}
-        onClose={() => setReadingMangaSlug(null)}
+        onClose={handleCloseManga}
         targetMangaSlug={readingMangaSlug}
         watchlist={watchlist}
         onSaveToWatchlist={handleSaveToWatchlist}

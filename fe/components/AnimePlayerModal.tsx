@@ -17,7 +17,8 @@ import {
   Search,
   GitBranch,
   Building2,
-  Video
+  Video,
+  Share2
 } from 'lucide-react';
 import {
   AnimeEpisode,
@@ -85,6 +86,7 @@ const AnimePlayerModal: React.FC<AnimePlayerModalProps> = ({
   const [watchedEpisodes, setWatchedEpisodes] = useState<string[]>([]);
   const [relations, setRelations] = useState<AnimeRelationItem[]>([]);
   const [studios, setStudios] = useState<string[]>([]);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const [resolvedMeta, setResolvedMeta] = useState<{
     title: string;
@@ -398,6 +400,19 @@ const AnimePlayerModal: React.FC<AnimePlayerModalProps> = ({
               <span>{playerMode === 'trailer' ? 'Quay lại Phim' : 'Xem Trailer'}</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href).catch(() => {});
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 2000);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border bg-white/5 hover:bg-cyan-500/20 text-cyan-300 border-white/10 transition-all"
+            title="Copy link chia sẻ phim này"
+          >
+            {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+            <span className="hidden md:inline">{copiedLink ? 'Đã chép link!' : 'Chia sẻ'}</span>
+          </button>
 
           <button
             onClick={handleBookmark}
