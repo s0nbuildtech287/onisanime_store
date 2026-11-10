@@ -10,7 +10,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { slug } = req.query;
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const slug = req.query?.slug || urlObj.searchParams.get('slug');
     if (!slug) {
       res.status(400).json({ error: 'Missing slug' });
       return;
@@ -18,28 +19,26 @@ export default async function handler(req, res) {
 
     const fetchUrl = `${NETTRUYEN_HOST}/truyen-tranh/${slug}`;
     const response = await fetch(fetchUrl, {
-      headers: { 'User-Agent': USER_AGENT }
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8'
+      }
     });
     const html = await response.text();
 
-    // Title
     const titleMatch = html.match(/<h1 class="title-detail">([^<]+)<\/h1>/);
     const title = titleMatch ? titleMatch[1].trim() : slug;
 
-    // Description
     const descMatch = html.match(/<div class="detail-content">([\s\S]*?)<\/div>/);
-    const description = descMatch
-      ? descMatch[1].replace(/<[^>]+>/g, '').trim()
-      : '';
+    const description = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
-    // Thumb
     const thumbMatch = html.match(/<div class="col-image">\s*<img [^>]*src="([^"]+)"/);
     const rawThumb = thumbMatch ? thumbMatch[1] : '';
     const thumbUrl = rawThumb
       ? `/api/manga-image?url=${encodeURIComponent(rawThumb.startsWith('http') ? rawThumb : `https:${rawThumb}`)}`
       : '';
 
-    // Comic ID & Slug để lấy TRỌN BỘ 100% chapter
     const cIdMatch = html.match(/gOpts\.comicId\s*=\s*['"]?([0-9]+)['"]?/) ||
                      html.match(/comicId\s*[:=]\s*['"]?([0-9]+)['"]?/) ||
                      slug.match(/-([0-9]+)$/);
@@ -73,7 +72,6 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
 
-    // Fallback: nếu gọi API không được, lấy từ HTML ban đầu
     if (chapters.length === 0) {
       const chRegex = /<div class="col-xs-5 chapter">\s*<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g;
       let chMatch;

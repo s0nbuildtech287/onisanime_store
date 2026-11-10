@@ -10,7 +10,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { page = '1', keyword = '', type = 'truyen-moi' } = req.query;
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const page = req.query?.page || urlObj.searchParams.get('page') || '1';
+    const keyword = req.query?.keyword || urlObj.searchParams.get('keyword') || '';
+    const type = req.query?.type || urlObj.searchParams.get('type') || 'truyen-moi';
 
     let fetchUrl = `${NETTRUYEN_HOST}/?page=${page}`;
     if (keyword && keyword.trim()) {
@@ -24,7 +27,11 @@ export default async function handler(req, res) {
     }
 
     const response = await fetch(fetchUrl, {
-      headers: { 'User-Agent': USER_AGENT }
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8'
+      }
     });
     const html = await response.text();
 
@@ -62,7 +69,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Tính tổng số trang từ pagination
     const pagiBlock = html.match(/<ul class="pagination"[\s\S]*?<\/ul>/);
     let totalPages = 50;
     if (pagiBlock) {

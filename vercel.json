@@ -1,11 +1,5 @@
 {
-  "version": 2,
   "rewrites": [
-    { "source": "/api/manga/list", "destination": "/api/manga-list.js" },
-    { "source": "/api/manga/detail", "destination": "/api/manga-detail.js" },
-    { "source": "/api/manga/chapter", "destination": "/api/manga-chapter.js" },
-    { "source": "/api/manga-image", "destination": "/api/manga-image.js" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
-

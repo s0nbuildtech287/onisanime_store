@@ -10,7 +10,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { url: targetUrl } = req.query;
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const targetUrl = req.query?.url || urlObj.searchParams.get('url');
     if (!targetUrl) {
       res.status(400).end();
       return;
@@ -36,4 +37,3 @@ export default async function handler(req, res) {
     res.status(500).end();
   }
 }
-

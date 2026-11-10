@@ -52,7 +52,10 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
   const [chapSearch, setChapSearch] = useState('');
   const [isDescOrder, setIsDescOrder] = useState(false);
   const [selectedChunkIdx, setSelectedChunkIdx] = useState(0);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
+  );
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Tải thông tin truyện & danh sách Chapter khi mở modal
   useEffect(() => {
@@ -63,17 +66,27 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
     setPages([]);
     setSelectedChunkIdx(0);
     setChapSearch('');
+    setErrorMsg(null);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setShowSidebar(false);
+    }
 
     mangaApi
       .getMangaDetail(targetMangaSlug)
       .then((detail) => {
+        if (!detail) {
+          setErrorMsg('Không thể tải thông tin truyện từ server. Vui lòng thử lại.');
+          return;
+        }
         setMangaDetail(detail);
         if (detail?.chapters && detail.chapters.length > 0) {
-          // Mặc định mở Chapter đầu tiên (Chap 1 khi không đảo chiều)
           const first = isDescOrder ? detail.chapters[0] : detail.chapters[detail.chapters.length - 1];
           setActiveChapter(first || detail.chapters[0]);
+        } else {
+          setErrorMsg('Truyện này hiện chưa có chapter nào.');
         }
       })
+      .catch(() => setErrorMsg('Lỗi kết nối khi tải danh sách chapter.'))
       .finally(() => setLoadingDetail(false));
   }, [isOpen, targetMangaSlug]);
 
@@ -83,12 +96,18 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
     setLoadingPages(true);
     setPages([]);
     setCurrentPageIdx(0);
+    setErrorMsg(null);
 
     mangaApi
       .getChapterPages(activeChapter.chapter_api_data)
       .then((res) => {
-        setPages(res.pages);
+        if (!res.pages || res.pages.length === 0) {
+          setErrorMsg('Không tải được trang ảnh cho chapter này.');
+        } else {
+          setPages(res.pages);
+        }
       })
+      .catch(() => setErrorMsg('Lỗi kết nối khi tải trang ảnh.'))
       .finally(() => setLoadingPages(false));
   }, [activeChapter]);
 
@@ -291,15 +310,36 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
       </div>
 
       {/* Body: Cột đọc truyện + Sidebar chọn Chapter */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="relative flex-1 flex overflow-hidden">
         {/* Khu vực hiển thị trang truyện */}
-        <div className="flex-1 overflow-y-auto bg-[#05060a] flex flex-col items-center py-4 px-2">
+        <div className="flex-1 min-w-0 overflow-y-auto bg-[#05060a] flex flex-col items-center py-3 px-1 sm:px-3">
           {loadingDetail || loadingPages ? (
-            <div className="my-auto flex flex-col items-center gap-3">
+            <div className="my-auto flex flex-col items-center gap-3 p-6 text-center">
               <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
               <p className="text-sm font-bold text-slate-200">
                 Đang tải các trang truyện từ CDN tốc độ cao...
               </p>
+            </div>
+          ) : errorMsg ? (
+            <div className="my-auto text-center p-6 max-w-sm space-y-3">
+              <BookOpen className="w-12 h-12 text-rose-400 mx-auto" />
+              <p className="text-sm font-bold text-rose-300">{errorMsg}</p>
+              <button
+                onClick={() => {
+                  if (activeChapter) {
+                    const copy = { ...activeChapter };
+                    setActiveChapter(null);
+                    setTimeout(() => setActiveChapter(copy), 50);
+                  } else if (targetMangaSlug) {
+                    setErrorMsg(null);
+                    setLoadingDetail(true);
+                    mangaApi.getMangaDetail(targetMangaSlug).then(setMangaDetail).finally(() => setLoadingDetail(false));
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-extrabold"
+              >
+                Thử Tải Lại
+              </button>
             </div>
           ) : pages.length === 0 ? (
             <div className="my-auto text-center p-6">
@@ -310,11 +350,11 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
             <div className="flex flex-col items-center w-full" style={{ maxWidth: `${zoomWidth}px` }}>
               {pages.map((imgUrl, idx) => (
                 <img
-                  key={idx}
+                  key={`${activeChapter?.chapter_api_data}_${idx}`}
                   src={imgUrl}
                   alt={`Trang ${idx + 1}`}
-                  loading="lazy"
-                  className="w-full h-auto block select-none bg-slate-900"
+                  decoding="async"
+                  className="w-full h-auto block select-none bg-slate-900 min-h-[120px]"
                 />
               ))}
 
@@ -367,9 +407,17 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
           )}
         </div>
 
-        {/* Sidebar danh sách Chapter bên phải (Rộng rãi, hỗ trợ phân đoạn Chunks) */}
+        {/* Backdrop cho Mobile khi mở Sidebar Drawer */}
         {showSidebar && (
-          <div className="w-80 sm:w-96 bg-[#080b14] border-l border-white/10 flex flex-col p-3.5 z-20 transition-all">
+          <div
+            onClick={() => setShowSidebar(false)}
+            className="lg:hidden fixed inset-0 bg-black/60 z-30"
+          />
+        )}
+
+        {/* Sidebar danh sách Chapter bên phải (Drawer nổi trên Mobile, cột cố định trên Desktop) */}
+        {showSidebar && (
+          <div className="fixed lg:static inset-y-0 right-0 top-[52px] lg:top-auto w-80 sm:w-96 bg-[#080b14] border-l border-white/10 flex flex-col p-3.5 z-40 lg:z-20 shadow-2xl lg:shadow-none transition-all shrink-0">
             {/* Header Sidebar & Tìm kiếm */}
             <div className="flex items-center justify-between pb-3 mb-2.5 border-b border-white/10 gap-2">
               <button
@@ -424,7 +472,12 @@ const MangaReaderModal: React.FC<MangaReaderModalProps> = ({
                 return (
                   <button
                     key={idx}
-                    onClick={() => setActiveChapter(ch)}
+                    onClick={() => {
+                      setActiveChapter(ch);
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setShowSidebar(false);
+                      }
+                    }}
                     title={ch.chapter_title || `Chapter ${ch.chapter_name}`}
                     className={`h-10 px-1 rounded-xl text-xs font-black transition-all border flex items-center justify-center truncate ${
                       active

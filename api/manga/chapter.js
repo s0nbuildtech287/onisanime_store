@@ -10,7 +10,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { url: chapterUrl } = req.query;
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const chapterUrl = req.query?.url || urlObj.searchParams.get('url');
     if (!chapterUrl) {
       res.status(400).json({ error: 'Missing chapter url' });
       return;
@@ -18,11 +19,15 @@ export default async function handler(req, res) {
 
     const fetchUrl = chapterUrl.replace(/https?:\/\/[^\/]+/, NETTRUYEN_HOST);
     const response = await fetch(fetchUrl, {
-      headers: { 'User-Agent': USER_AGENT }
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en;q=0.8'
+      }
     });
     const html = await response.text();
 
-    const pRegex = /<div class=['"]page-chapter['"][^>]*>\s*<img[^>]+data-src=['"]([^'"]+)['"]/g;
+    const pRegex = /<div class=['"]page-chapter['"][^>]*>\s*<img[^>]+(?:data-src|data-sv1|data-original|src)=['"]([^'"]+)['"]/g;
     let pMatch;
     const pages = [];
     while ((pMatch = pRegex.exec(html)) !== null) {

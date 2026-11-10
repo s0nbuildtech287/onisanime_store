@@ -244,7 +244,7 @@ function onisanimeBackendPlugin(): Plugin {
           });
           const html = await response.text();
 
-          const pRegex = /<div class=['"]page-chapter['"][^>]*>\s*<img[^>]+data-src=['"]([^'"]+)['"]/g;
+          const pRegex = /<div class=['"]page-chapter['"][^>]*>\s*<img[^>]+(?:data-src|data-sv1|data-original|src)=['"]([^'"]+)['"]/g;
           let pMatch;
           const pages: string[] = [];
           while ((pMatch = pRegex.exec(html)) !== null) {
