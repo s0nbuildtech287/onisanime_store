@@ -152,6 +152,14 @@ const App: React.FC = () => {
   // Watchlist / Readlist States
   const [watchlist, setWatchlist] = useState<MediaItem[]>([]);
 
+  // Ranking Podium Tab States (Live Data Toàn Cầu cho cả Anime & Manga)
+  const [rankingMedia, setRankingMedia] = useState<'anime' | 'manga'>('anime');
+  const [rankingAnimeType, setRankingAnimeType] = useState<'TRENDING_DESC' | 'SCORE_DESC' | 'FAVOURITES_DESC'>('TRENDING_DESC');
+  const [rankingMangaType, setRankingMangaType] = useState<'top-month' | 'top-all' | 'top-follow'>('top-month');
+  const [rankingAnimeItems, setRankingAnimeItems] = useState<AnimeCardItem[]>([]);
+  const [rankingMangaItems, setRankingMangaItems] = useState<MangaCardItem[]>([]);
+  const [loadingRanking, setLoadingRanking] = useState(false);
+
   // Active Modals
   const [playingAnime, setPlayingAnime] = useState<PlayerTargetAnime | null>(null);
   const [readingMangaSlug, setReadingMangaSlug] = useState<string | null>(null);
@@ -160,6 +168,23 @@ const App: React.FC = () => {
   useEffect(() => {
     storageApi.getAll().then(setWatchlist);
   }, []);
+
+  // Load Live Global Ranking Data (Anime hoặc Manga)
+  useEffect(() => {
+    if (activeTab !== 'ranking') return;
+    setLoadingRanking(true);
+    if (rankingMedia === 'anime') {
+      anilistApi
+        .getFilteredAnime({ page: 1, perPage: 24, sort: rankingAnimeType })
+        .then((res) => setRankingAnimeItems(res.items))
+        .finally(() => setLoadingRanking(false));
+    } else {
+      mangaApi
+        .getMangaList({ type: rankingMangaType, page: 1 })
+        .then((res) => setRankingMangaItems(res.items.slice(0, 24)))
+        .finally(() => setLoadingRanking(false));
+    }
+  }, [activeTab, rankingMedia, rankingAnimeType, rankingMangaType]);
 
   // Load Anime List (Tìm kiếm hợp nhất đa nguồn hoặc duyệt theo Bộ lọc)
   useEffect(() => {
@@ -1383,73 +1408,259 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* 5. TAB BẢNG XẾP HẠNG PODIUM */}
+        {/* 5. TAB BẢNG XẾP HẠNG PODIUM (LIVE DATA TOÀN CẦU ANIME & MANGA) */}
         {activeTab === 'ranking' && (
-          <div className="space-y-6">
-            <div className="glass-panel rounded-2xl p-6 text-center space-y-2">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-extrabold">
-                <Crown className="w-4 h-4" /> HALL OF FAME
+          <div className="space-y-8">
+            {/* Header & Controls */}
+            <div className="glass-panel rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold">
+                  <Crown className="w-3.5 h-3.5" /> HALL OF FAME • LIVE RANKING
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  {rankingMedia === 'anime'
+                    ? '🏆 BẢNG XẾP HẠNG ANIME TOÀN CẦU'
+                    : '📖 BẢNG XẾP HẠNG TRUYỆN TRANH ĐỈNH CAO'}
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Dữ liệu xếp hạng thời gian thực — Bấm vào bất kỳ bộ nào để xem / đọc ngay lập tức!
+                </p>
               </div>
-              <h2 className="text-2xl font-black text-white">
-                BẢNG XẾP HẠNG TUYỆT PHẨM OTAKU
-              </h2>
-              <p className="text-xs text-slate-400">
-                Xếp hạng theo điểm đánh giá cá nhân & thứ tự ưu tiên trong Tủ của bạn
-              </p>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                {/* Chọn Anime hoặc Truyện Tranh */}
+                <div className="flex bg-slate-900/90 p-1 rounded-2xl border border-white/10">
+                  <button
+                    onClick={() => setRankingMedia('anime')}
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                      rankingMedia === 'anime'
+                        ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Tv className="w-4 h-4" />
+                    <span>BXH Anime</span>
+                  </button>
+                  <button
+                    onClick={() => setRankingMedia('manga')}
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                      rankingMedia === 'manga'
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 shadow'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>BXH Truyện Tranh</span>
+                  </button>
+                </div>
+
+                {/* Chuyển 3 BXH con */}
+                {rankingMedia === 'anime' ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'TRENDING_DESC', label: '🔥 Đang Hot Nhất' },
+                      { id: 'SCORE_DESC', label: '👑 Điểm Cao Mọi Thời Đại' },
+                      { id: 'FAVOURITES_DESC', label: '❤️ Yêu Thích Nhất' }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setRankingAnimeType(t.id as any)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold border transition-all ${
+                          rankingAnimeType === t.id
+                            ? 'bg-amber-500 text-slate-950 border-amber-300 shadow'
+                            : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'top-month', label: '🔥 Top Hot Tháng Này' },
+                      { id: 'top-all', label: '👑 Top Mọi Thời Đại' },
+                      { id: 'top-follow', label: '❤️ Yêu Thích Nhất' }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setRankingMangaType(t.id as any)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-extrabold border transition-all ${
+                          rankingMangaType === t.id
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
+                            : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[...watchlist]
-                .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-                .slice(0, 3)
-                .map((item, idx) => {
-                  const medals = [
-                    { label: 'TOP 1 • HUYỀN THOẠI', color: 'from-amber-400 to-yellow-600' },
-                    { label: 'TOP 2 • CỰC PHẨM', color: 'from-slate-300 to-slate-500' },
-                    { label: 'TOP 3 • ĐÁNG XEM', color: 'from-amber-600 to-orange-700' }
-                  ];
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() =>
-                        setPlayingAnime({
-                          slug: item.slug?.startsWith('anilist_') ? undefined : item.slug,
-                          title: item.title,
-                          originTitle: item.originTitle,
-                          posterUrl: item.imageUrl,
-                          bannerUrl: item.bannerUrl,
-                          synopsis: item.description,
-                          year: item.releaseYear,
-                          malScore: item.rating
-                        })
-                      }
-                      className="glass-panel rounded-3xl p-5 flex gap-4 items-center cursor-pointer hover:border-amber-400/50 transition-all"
-                    >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.title}
-                        className="w-24 h-36 object-cover rounded-2xl border border-white/15 shrink-0"
-                      />
-                      <div className="space-y-2">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-lg bg-gradient-to-r ${medals[idx].color} text-slate-950 text-[10px] font-black`}
-                        >
-                          {medals[idx].label}
-                        </span>
-                        <h3 className="text-base font-extrabold text-white line-clamp-2">
-                          {item.title}
-                        </h3>
-                        <p className="text-xs font-extrabold text-amber-300">
-                          Điểm đánh giá: ★ {item.rating} / 10
-                        </p>
-                        <p className="text-[11px] text-slate-400 line-clamp-2">
-                          {item.description}
-                        </p>
-                      </div>
+            {loadingRanking ? (
+              <div className="py-20 flex flex-col items-center gap-3">
+                <Loader2 className="w-10 h-10 text-amber-400 animate-spin" />
+                <p className="text-sm font-bold text-slate-300">
+                  Đang tổng hợp Bảng Xếp Hạng Live...
+                </p>
+              </div>
+            ) : (
+              (() => {
+                const isAnime = rankingMedia === 'anime';
+                const list = isAnime ? rankingAnimeItems : rankingMangaItems;
+                const top3 = list.slice(0, 3);
+                const rest = list.slice(3, 24);
+
+                // Sắp xếp hiển thị bục Olympic trên desktop: Top 2 (trái) - Top 1 (giữa) - Top 3 (phải)
+                const podiumOrder =
+                  top3.length >= 3
+                    ? [
+                        { item: top3[1], rank: 2, orderClass: 'md:order-1 md:mt-6', badge: 'TOP 2 • BẠC', gradient: 'from-slate-200 via-slate-300 to-slate-400', border: 'border-slate-300/40', glow: 'shadow-slate-400/15' },
+                        { item: top3[0], rank: 1, orderClass: 'md:order-2 md:-mt-2', badge: 'TOP 1 • VÀNG HUYỀN THOẠI', gradient: 'from-amber-300 via-yellow-400 to-amber-500', border: 'border-amber-400/70', glow: 'shadow-amber-500/25' },
+                        { item: top3[2], rank: 3, orderClass: 'md:order-3 md:mt-8', badge: 'TOP 3 • ĐỒNG', gradient: 'from-amber-600 via-orange-600 to-amber-700', border: 'border-orange-500/40', glow: 'shadow-orange-500/15' }
+                      ]
+                    : top3.map((it, idx) => ({
+                        item: it,
+                        rank: idx + 1,
+                        orderClass: '',
+                        badge: `TOP ${idx + 1}`,
+                        gradient: 'from-amber-400 to-yellow-500',
+                        border: 'border-amber-400/50',
+                        glow: ''
+                      }));
+
+                const handleItemClick = (item: any) => {
+                  if (isAnime) {
+                    openAnimePlayer(item as AnimeCardItem);
+                  } else {
+                    setReadingMangaSlug((item as MangaCardItem).slug);
+                  }
+                };
+
+                return (
+                  <div className="space-y-8">
+                    {/* BỤC VINH QUANG PODIUM TOP 1 - 2 - 3 */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch pt-2">
+                      {podiumOrder.map(({ item, rank, orderClass, badge, gradient, border, glow }) => {
+                        const title = item.title;
+                        const img = isAnime
+                          ? (item as AnimeCardItem).posterUrl
+                          : (item as MangaCardItem).thumbUrl;
+                        const subInfo = isAnime
+                          ? `★ ${(item as AnimeCardItem).malScore || 8.8} • ${(item as AnimeCardItem).episodeCurrent || 'TV'}`
+                          : (item as MangaCardItem).latestChapter || 'Mới cập nhật';
+                        const desc = isAnime
+                          ? (item as AnimeCardItem).synopsis
+                          : (item as MangaCardItem).genres?.join(' • ');
+
+                        return (
+                          <div
+                            key={`${rank}_${item.id}`}
+                            onClick={() => handleItemClick(item)}
+                            className={`relative glass-panel rounded-3xl p-5 flex gap-4 items-center cursor-pointer border ${border} shadow-2xl ${glow} hover:scale-[1.02] transition-all ${orderClass}`}
+                          >
+                            {rank === 1 && (
+                              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-300 to-yellow-500 text-slate-950 text-[10px] font-black flex items-center gap-1 shadow-lg">
+                                <Crown className="w-3.5 h-3.5" /> QUÁN QUÂN #1
+                              </div>
+                            )}
+
+                            <div className="relative shrink-0">
+                              <img
+                                src={img}
+                                alt={title}
+                                className={`object-cover rounded-2xl border border-white/20 ${
+                                  rank === 1 ? 'w-28 h-40' : 'w-24 h-36'
+                                }`}
+                              />
+                              <div
+                                className={`absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-gradient-to-br ${gradient} text-slate-950 font-black text-sm flex items-center justify-center shadow-lg border-2 border-[#06070d]`}
+                              >
+                                {rank}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2 min-w-0 flex-1">
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-lg bg-gradient-to-r ${gradient} text-slate-950 text-[10px] font-black`}
+                              >
+                                {badge}
+                              </span>
+                              <h3 className="text-sm sm:text-base font-extrabold text-white line-clamp-2">
+                                {title}
+                              </h3>
+                              <p
+                                className={`text-xs font-extrabold ${
+                                  isAnime ? 'text-amber-300' : 'text-emerald-400'
+                                }`}
+                              >
+                                {subInfo}
+                              </p>
+                              {desc && (
+                                <p className="text-[11px] text-slate-400 line-clamp-2">{desc}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-            </div>
+
+                    {/* DANH SÁCH TOP 4 -> TOP 24 BÊN DƯỚI */}
+                    {rest.length > 0 && (
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-black text-slate-200 flex items-center gap-2">
+                          <Trophy className="w-4 h-4 text-amber-400" />
+                          <span>BẢNG XẾP HẠNG TOP 4 → TOP {rest.length + 3}</span>
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                          {rest.map((item, idx) => {
+                            const rank = idx + 4;
+                            const img = isAnime
+                              ? (item as AnimeCardItem).posterUrl
+                              : (item as MangaCardItem).thumbUrl;
+                            const sub = isAnime
+                              ? `★ ${(item as AnimeCardItem).malScore || 8.5} • ${(item as AnimeCardItem).format || 'TV'}`
+                              : (item as MangaCardItem).latestChapter || 'Mới';
+
+                            return (
+                              <div
+                                key={`${rank}_${item.id}`}
+                                onClick={() => handleItemClick(item)}
+                                className="glass-panel rounded-2xl p-3 flex items-center gap-3.5 cursor-pointer hover:border-amber-400/50 hover:bg-slate-900/90 transition-all group"
+                              >
+                                <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center font-black text-sm text-slate-300 group-hover:text-amber-300 group-hover:border-amber-400/40 shrink-0">
+                                  #{rank}
+                                </div>
+                                <img
+                                  src={img}
+                                  alt={item.title}
+                                  loading="lazy"
+                                  className="w-12 h-16 object-cover rounded-xl border border-white/10 shrink-0"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <h4 className="text-xs font-extrabold text-white line-clamp-2 group-hover:text-amber-300 transition-colors">
+                                    {item.title}
+                                  </h4>
+                                  <p
+                                    className={`text-[11px] font-bold mt-1 ${
+                                      isAnime ? 'text-amber-300' : 'text-emerald-400'
+                                    }`}
+                                  >
+                                    {sub}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            )}
           </div>
         )}
       </main>

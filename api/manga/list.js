@@ -24,6 +24,14 @@ export default async function handler(req, res) {
       fetchUrl = `${NETTRUYEN_HOST}/tim-truyen/manga-112?page=${page}`;
     } else if (type === 'action') {
       fetchUrl = `${NETTRUYEN_HOST}/tim-truyen/action-95?page=${page}`;
+    } else if (type === 'top-all') {
+      fetchUrl = `${NETTRUYEN_HOST}/tim-truyen?status=-1&sort=10&page=${page}`;
+    } else if (type === 'top-month') {
+      fetchUrl = `${NETTRUYEN_HOST}/tim-truyen?status=-1&sort=11&page=${page}`;
+    } else if (type === 'top-week') {
+      fetchUrl = `${NETTRUYEN_HOST}/tim-truyen?status=-1&sort=12&page=${page}`;
+    } else if (type === 'top-follow') {
+      fetchUrl = `${NETTRUYEN_HOST}/tim-truyen?status=-1&sort=20&page=${page}`;
     }
 
     const response = await fetch(fetchUrl, {
