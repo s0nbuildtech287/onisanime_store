@@ -1049,7 +1049,12 @@ export const mangaApi = {
       const res = await fetch(`/api/manga/detail?slug=${encodeURIComponent(slug)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.title && Array.isArray(data.chapters) && data.chapters.length > 0) {
+        if (
+          data &&
+          data.title &&
+          ((Array.isArray(data.chapters) && data.chapters.length > 0) ||
+            String(data.id || '').startsWith('md_'))
+        ) {
           return data;
         }
       }

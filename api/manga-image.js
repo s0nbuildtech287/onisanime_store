@@ -1,6 +1,4 @@
-const NETTRUYEN_REFERER = 'https://nettruyenar.com/';
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+import { resolveMangaImage } from '../lib/mangaSources.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,33 +10,24 @@ export default async function handler(req, res) {
 
   try {
     const urlObj = new URL(req.url || '', 'http://localhost');
-    const targetUrl = req.query?.url || urlObj.searchParams.get('url');
-    if (!targetUrl || !/^https?:\/\//i.test(String(targetUrl))) {
+    const targetUrl = String(req.query?.url || urlObj.searchParams.get('url') || '');
+    const title = String(req.query?.title || urlObj.searchParams.get('title') || '');
+    const alId = String(req.query?.alId || urlObj.searchParams.get('alId') || '');
+
+    if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).end();
       return;
     }
 
-    const urlStr = String(targetUrl);
-    const isMangaDex = /mangadex\.(org|network)/i.test(urlStr);
-
-    const imgRes = await fetch(urlStr, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        Referer: isMangaDex ? 'https://mangadex.org/' : NETTRUYEN_REFERER
-      },
-      signal: AbortSignal.timeout(9000)
-    });
-
-    if (!imgRes.ok) {
-      res.status(imgRes.status).end();
+    const result = await resolveMangaImage({ targetUrl, title, alId });
+    if (!result || result.status !== 200 || !result.buffer) {
+      res.status(result?.status || 502).end();
       return;
     }
 
-    const buffer = await imgRes.arrayBuffer();
-    res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.status(200).send(Buffer.from(buffer));
+    res.setHeader('Content-Type', result.contentType || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800');
+    res.status(200).send(result.buffer);
   } catch (_) {
     res.status(500).end();
   }

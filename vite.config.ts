@@ -5,11 +5,10 @@ import fs from 'fs';
 import {
   resolveMangaList,
   resolveMangaDetail,
-  resolveMangaChapterPages
+  resolveMangaChapterPages,
+  resolveMangaImage,
+  USER_AGENT
 } from './lib/mangaSources.js';
-
-const NETTRUYEN_REFERER = 'https://nettruyenar.com/';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
 function onisanimeBackendPlugin(): Plugin {
   return {
@@ -85,7 +84,7 @@ function onisanimeBackendPlugin(): Plugin {
           }
 
           const detail = await resolveMangaDetail(slug);
-          if (!detail || !Array.isArray(detail.chapters) || detail.chapters.length === 0) {
+          if (!detail || !detail.title) {
             res.statusCode = 404;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ error: 'Manga chapters not available', chapters: [] }));
@@ -131,34 +130,27 @@ function onisanimeBackendPlugin(): Plugin {
       server.middlewares.use('/api/manga-image', async (req, res) => {
         try {
           const urlObj = new URL(req.url || '', 'http://localhost');
-          const targetUrl = urlObj.searchParams.get('url');
+          const targetUrl = urlObj.searchParams.get('url') || '';
+          const title = urlObj.searchParams.get('title') || '';
+          const alId = urlObj.searchParams.get('alId') || '';
           if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
             res.statusCode = 400;
             res.end();
             return;
           }
 
-          const isMangaDex = /mangadex\.(org|network)/i.test(targetUrl);
-          const imgRes = await fetch(targetUrl, {
-            headers: {
-              'User-Agent': USER_AGENT,
-              Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-              Referer: isMangaDex ? 'https://mangadex.org/' : NETTRUYEN_REFERER
-            }
-          });
-
-          if (!imgRes.ok) {
-            res.statusCode = imgRes.status;
+          const result = await resolveMangaImage({ targetUrl, title, alId });
+          if (!result || result.status !== 200 || !result.buffer) {
+            res.statusCode = result?.status || 502;
             res.end();
             return;
           }
 
-          const buffer = await imgRes.arrayBuffer();
           res.statusCode = 200;
-          res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
+          res.setHeader('Content-Type', result.contentType || 'image/jpeg');
           res.setHeader('Cache-Control', 'public, max-age=86400');
           res.setHeader('Access-Control-Allow-Origin', '*');
-          res.end(Buffer.from(buffer));
+          res.end(result.buffer);
         } catch (_) {
           res.statusCode = 500;
           res.end();

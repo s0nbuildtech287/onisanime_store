@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     }
 
     const detail = await resolveMangaDetail(String(slug));
-    if (!detail || !Array.isArray(detail.chapters) || detail.chapters.length === 0) {
+    if (!detail || !detail.title) {
       res.status(404).json({ error: 'Manga chapters not available', chapters: [] });
       return;
     }
