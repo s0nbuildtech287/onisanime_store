@@ -17,8 +17,10 @@ import {
   Trash2,
   Crown,
   Server,
-  Film,
-  Compass
+  Compass,
+  Clock,
+  RotateCcw,
+  History
 } from 'lucide-react';
 import {
   AnimeCardItem,
@@ -27,10 +29,17 @@ import {
   MediaCategory,
   MediaItem,
   MediaStatus,
-  ScheduleAnimeItem
+  ScheduleAnimeItem,
+  WatchHistoryItem
 } from './types';
-import { animeApi, mangaApi, storageApi } from './services/otakuApi';
-import AnimePlayerModal from './components/AnimePlayerModal';
+import {
+  anilistApi,
+  animeApi,
+  mangaApi,
+  storageApi,
+  watchHistoryApi
+} from './services/otakuApi';
+import AnimePlayerModal, { PlayerTargetAnime } from './components/AnimePlayerModal';
 import MangaReaderModal from './components/MangaReaderModal';
 
 const WEEKDAYS = [
@@ -43,26 +52,97 @@ const WEEKDAYS = [
   { id: 'sunday', label: 'Chủ Nhật' }
 ];
 
+const ANIME_FORMATS = [
+  { id: 'all', label: 'Tất cả dạng' },
+  { id: 'TV', label: '📺 Anime Bộ (TV)' },
+  { id: 'MOVIE', label: '🎬 Chiếu Rạp (Movie)' },
+  { id: 'OVA', label: '💿 OVA' },
+  { id: 'ONA', label: '🌐 ONA' },
+  { id: 'SPECIAL', label: '✨ Special' }
+];
+
+const ANIME_SEASONS = [
+  { id: 'all', label: 'Tất cả mùa' },
+  { id: 'WINTER', label: '❄️ Đông (Winter)' },
+  { id: 'SPRING', label: '🌸 Xuân (Spring)' },
+  { id: 'SUMMER', label: '☀️ Hạ (Summer)' },
+  { id: 'FALL', label: '🍁 Thu (Fall)' }
+];
+
+const ANIME_SORTS = [
+  { id: 'TRENDING_DESC', label: '🔥 Đang Thịnh Hành' },
+  { id: 'SCORE_DESC', label: '⭐ Điểm Cao Nhất (Top)' },
+  { id: 'POPULARITY_DESC', label: '👁️ Phổ Biến Nhất' },
+  { id: 'FAVOURITES_DESC', label: '❤️ Yêu Thích Nhất' }
+];
+
+const ANIME_GENRES = [
+  { id: 'all', label: 'Tất cả thể loại', isTag: false },
+  { id: 'Action', label: 'Hành Động (Action)', isTag: false },
+  { id: 'Adventure', label: 'Phiêu Lưu (Adventure)', isTag: false },
+  { id: 'Isekai', label: 'Chuyển Sinh (Isekai)', isTag: true },
+  { id: 'Fantasy', label: 'Phép Thuật (Fantasy)', isTag: false },
+  { id: 'Romance', label: 'Tình Cảm (Romance)', isTag: false },
+  { id: 'Comedy', label: 'Hài Hước (Comedy)', isTag: false },
+  { id: 'Harem', label: 'Harem', isTag: true },
+  { id: 'Ecchi', label: 'Ecchi', isTag: false },
+  { id: 'Slice of Life', label: 'Đời Thường (Slice of Life)', isTag: false },
+  { id: 'Psychological', label: 'Tâm Lý (Psychological)', isTag: false },
+  { id: 'Mecha', label: 'Người Máy (Mecha)', isTag: false },
+  { id: 'Mystery', label: 'Bí Ẩn (Mystery)', isTag: false },
+  { id: 'Sports', label: 'Thể Thao (Sports)', isTag: false },
+  { id: 'Supernatural', label: 'Siêu Nhiên', isTag: false }
+];
+
+function formatCountdown(seconds?: number): string {
+  if (!seconds || seconds <= 0) return 'Đã phát sóng';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `Còn ${days} ngày ${hours}g`;
+  if (hours > 0) return `Còn ${hours}g ${mins}p`;
+  return `Còn ${mins} phút`;
+}
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('anime');
   const [searchQuery, setSearchQuery] = useState('');
   const [submittedSearch, setSubmittedSearch] = useState('');
 
-  // Anime Tab States
+  // Chế độ duyệt Anime: 'anilist' (Chuẩn Otaku TV/Movie/Season/Top) hoặc 'vn' (KKPhim/NguonC + Donghua 3D)
+  const [animeBrowseMode, setAnimeBrowseMode] = useState<'anilist' | 'vn'>('anilist');
+
+  // Bộ lọc AniList Hub (Chuẩn AnimeVietsub)
+  const [selectedFormat, setSelectedFormat] = useState<string>('all');
+  const [selectedSeason, setSelectedSeason] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [selectedSort, setSelectedSort] = useState<string>('TRENDING_DESC');
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
+
+  // Bộ lọc nguồn VN trực tiếp (Donghua / KKPhim / NguonC)
+  const [selectedCountry, setSelectedCountry] = useState<'all' | 'nhat-ban' | 'trung-quoc'>('all');
+  const [selectedSource, setSelectedSource] = useState<'kkphim' | 'nguonc'>('kkphim');
+
+  // Anime List & Hero Carousel
   const [animeList, setAnimeList] = useState<AnimeCardItem[]>([]);
   const [loadingAnime, setLoadingAnime] = useState(false);
   const [animePage, setAnimePage] = useState(1);
   const [animeTotalPages, setAnimeTotalPages] = useState(1);
-  const [selectedCountry, setSelectedCountry] = useState<'all' | 'nhat-ban' | 'trung-quoc'>('all');
-  const [selectedYear, setSelectedYear] = useState<string>('all');
-  const [selectedSource, setSelectedSource] = useState<'kkphim' | 'nguonc'>('kkphim');
+  const [heroIdx, setHeroIdx] = useState(0);
 
-  // Schedule Tab States (Jikan MyAnimeList)
-  const [scheduleDay, setScheduleDay] = useState<string>('monday');
+  // Continue Watching History
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => watchHistoryApi.getAll());
+
+  // Schedule Tab States (Simulcast thật theo ngày)
+  const [scheduleDay, setScheduleDay] = useState<string>(() => {
+    const jsDay = new Date().getDay();
+    const mapIdx = jsDay === 0 ? 6 : jsDay - 1;
+    return WEEKDAYS[mapIdx]?.id || 'monday';
+  });
   const [scheduleList, setScheduleList] = useState<ScheduleAnimeItem[]>([]);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
-  // Manga Tab States (OTruyen API)
+  // Manga Tab States
   const [mangaList, setMangaList] = useState<MangaCardItem[]>([]);
   const [loadingManga, setLoadingManga] = useState(false);
   const [mangaPage, setMangaPage] = useState(1);
@@ -73,17 +153,7 @@ const App: React.FC = () => {
   const [watchlist, setWatchlist] = useState<MediaItem[]>([]);
 
   // Active Modals
-  const [playingAnime, setPlayingAnime] = useState<{
-    slug?: string;
-    title: string;
-    originTitle?: string;
-    posterUrl?: string;
-    bannerUrl?: string;
-    synopsis?: string;
-    year?: string | number;
-    malScore?: number;
-  } | null>(null);
-
+  const [playingAnime, setPlayingAnime] = useState<PlayerTargetAnime | null>(null);
   const [readingMangaSlug, setReadingMangaSlug] = useState<string | null>(null);
 
   // Load Watchlist
@@ -91,37 +161,99 @@ const App: React.FC = () => {
     storageApi.getAll().then(setWatchlist);
   }, []);
 
-  // Load Anime List
+  // Load Anime List (Tìm kiếm hợp nhất đa nguồn hoặc duyệt theo Bộ lọc)
   useEffect(() => {
     if (activeTab !== 'anime') return;
     setLoadingAnime(true);
-    animeApi
-      .getAnimeList({
-        page: animePage,
-        country: selectedCountry,
-        year: selectedYear,
-        keyword: submittedSearch,
-        source: selectedSource
-      })
-      .then((res) => {
-        setAnimeList(res.items);
-        setAnimeTotalPages(res.totalPages);
-      })
-      .finally(() => setLoadingAnime(false));
-  }, [activeTab, animePage, selectedCountry, selectedYear, submittedSearch, selectedSource]);
+    setHeroIdx(0);
 
-  // Load Weekly Schedule (Anime Phát Sóng Tuần)
+    if (submittedSearch && submittedSearch.trim()) {
+      animeApi
+        .searchAllSources(submittedSearch.trim(), animePage)
+        .then((res) => {
+          setAnimeList(res.items);
+          setAnimeTotalPages(res.totalPages);
+        })
+        .finally(() => setLoadingAnime(false));
+      return;
+    }
+
+    if (animeBrowseMode === 'anilist') {
+      const genreObj = ANIME_GENRES.find((g) => g.id === selectedGenre);
+      anilistApi
+        .getFilteredAnime({
+          page: animePage,
+          perPage: 24,
+          format: selectedFormat,
+          season: selectedSeason,
+          seasonYear: selectedYear,
+          genre: genreObj && !genreObj.isTag ? genreObj.id : 'all',
+          tag: genreObj && genreObj.isTag ? genreObj.id : 'all',
+          sort: selectedSort
+        })
+        .then((res) => {
+          setAnimeList(res.items);
+          setAnimeTotalPages(res.totalPages);
+        })
+        .finally(() => setLoadingAnime(false));
+    } else {
+      animeApi
+        .getAnimeList({
+          page: animePage,
+          country: selectedCountry,
+          year: selectedYear,
+          source: selectedSource
+        })
+        .then((res) => {
+          setAnimeList(res.items);
+          setAnimeTotalPages(res.totalPages);
+        })
+        .finally(() => setLoadingAnime(false));
+    }
+  }, [
+    activeTab,
+    animeBrowseMode,
+    animePage,
+    selectedFormat,
+    selectedSeason,
+    selectedYear,
+    selectedSort,
+    selectedGenre,
+    selectedCountry,
+    selectedSource,
+    submittedSearch
+  ]);
+
+  // Auto-rotate Hero Carousel (5 slides)
+  useEffect(() => {
+    if (activeTab !== 'anime' || animeList.length < 2 || submittedSearch) return;
+    const timer = setInterval(() => {
+      setHeroIdx((i) => (i + 1) % Math.min(5, animeList.length));
+    }, 6500);
+    return () => clearInterval(timer);
+  }, [activeTab, animeList, submittedSearch]);
+
+  // Load Weekly Schedule (Real Simulcast từ AniList + fallback KKPhim)
   useEffect(() => {
     if (activeTab !== 'schedule') return;
     setLoadingSchedule(true);
-    const dayIdx = WEEKDAYS.findIndex(d => d.id === scheduleDay);
-    animeApi
-      .getWeeklySchedule(dayIdx >= 0 ? dayIdx : 0)
-      .then(setScheduleList)
+    const dayIdx = WEEKDAYS.findIndex((d) => d.id === scheduleDay);
+    const safeIdx = dayIdx >= 0 ? dayIdx : 0;
+
+    anilistApi
+      .getRealWeeklySchedule(safeIdx)
+      .then(async (realItems) => {
+        if (realItems.length > 0) {
+          setScheduleList(realItems);
+        } else {
+          const fallback = await animeApi.getWeeklySchedule(safeIdx);
+          setScheduleList(fallback);
+        }
+      })
       .finally(() => setLoadingSchedule(false));
   }, [activeTab, scheduleDay]);
 
-  // Load Manga List (OTruyen API)
+  // Load Manga List
   useEffect(() => {
     if (activeTab !== 'manga') return;
     setLoadingManga(true);
@@ -171,7 +303,37 @@ const App: React.FC = () => {
     }
   };
 
-  const featuredAnime = animeList[0];
+  const handleResetAnimeFilters = () => {
+    setSelectedFormat('all');
+    setSelectedSeason('all');
+    setSelectedYear('all');
+    setSelectedSort('TRENDING_DESC');
+    setSelectedGenre('all');
+    setSelectedCountry('all');
+    setSearchQuery('');
+    setSubmittedSearch('');
+    setAnimePage(1);
+  };
+
+  const openAnimePlayer = (anime: AnimeCardItem) => {
+    setPlayingAnime({
+      slug: anime.slug || undefined,
+      anilistId: anime.anilistId,
+      title: anime.title,
+      originTitle: anime.originTitle,
+      synonyms: anime.synonyms,
+      posterUrl: anime.posterUrl,
+      bannerUrl: anime.bannerUrl,
+      synopsis: anime.synopsis,
+      year: anime.year,
+      malScore: anime.malScore,
+      studios: anime.studios,
+      trailerUrl: anime.trailerUrl
+    });
+  };
+
+  const heroSlides = animeList.slice(0, 5);
+  const featuredAnime = heroSlides[heroIdx] || animeList[0];
 
   return (
     <div className="min-h-screen bg-[#06070d] text-slate-100 flex flex-col">
@@ -182,8 +344,7 @@ const App: React.FC = () => {
           <div
             onClick={() => {
               setActiveTab('anime');
-              setSubmittedSearch('');
-              setSearchQuery('');
+              handleResetAnimeFilters();
             }}
             className="flex items-center gap-3 cursor-pointer group"
           >
@@ -196,11 +357,11 @@ const App: React.FC = () => {
                   ONISANIME
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-pink-500/20 border border-pink-500/40 text-pink-300 text-[10px] font-extrabold">
-                  PRO HUB
+                  V2 OTAKU HUB
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Multi-Server Anime (KKPhim • OPhim • NguonC) & Manga Reader
+                Siêu Nền Tảng Anime Đa Nguồn (Season • Top • TV/Movie) & Manga
               </p>
             </div>
           </div>
@@ -228,7 +389,7 @@ const App: React.FC = () => {
               }`}
             >
               <Calendar className="w-4 h-4" />
-              <span>Lịch Chiếu (MAL)</span>
+              <span>Lịch Chiếu Tuần</span>
             </button>
 
             <button
@@ -278,7 +439,7 @@ const App: React.FC = () => {
               placeholder={
                 activeTab === 'manga'
                   ? 'Tìm truyện: One Piece, Conan, Solo Leveling...'
-                  : 'Tìm Anime: Frieren, One Piece, Conan, Doraemon...'
+                  : 'Tìm Anime: Frieren, Solo Leveling, Naruto...'
               }
               className="w-full pl-10 pr-16 py-2 rounded-xl bg-slate-900/90 border border-white/10 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-pink-500"
             />
@@ -305,172 +466,424 @@ const App: React.FC = () => {
       </header>
 
       {/* ================= MAIN CONTENT ================= */}
-      <main className="flex-1 max-w-[1750px] w-full mx-auto px-4 sm:px-8 py-6 space-y-8">
-        {/* 1. TAB XEM ANIME MULTI-SERVER */}
+      <main className="flex-1 max-w-[1750px] w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
+        {/* 1. TAB XEM ANIME V2 (CHUẨN ANIMEVIETSUB / ANILIST HUB) */}
         {activeTab === 'anime' && (
           <div className="space-y-6">
-            {/* Hero Banner */}
-            {featuredAnime && !submittedSearch && (
-              <div className="relative rounded-3xl overflow-hidden border border-white/15 min-h-[320px] sm:min-h-[380px] flex items-end p-6 sm:p-10 shadow-2xl">
+            {/* Hero Banner Carousel (5 Slide Hot Nhất - Sáng Nét Điện Ảnh) */}
+            {featuredAnime && !submittedSearch && animePage === 1 && (
+              <div className="relative rounded-3xl overflow-hidden border border-white/15 min-h-[340px] sm:min-h-[420px] flex items-end p-6 sm:p-10 shadow-2xl transition-all group">
                 <img
                   src={featuredAnime.bannerUrl || featuredAnime.posterUrl}
                   alt={featuredAnime.title}
-                  className="absolute inset-0 w-full h-full object-cover object-center scale-105 blur-[1px] opacity-45"
+                  className="absolute inset-0 w-full h-full object-cover object-center opacity-100 transition-all duration-700"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-[#06070d]/70 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-[#06070d] via-[#06070d]/60 to-transparent" />
+                {/* Gradient nhẹ chỉ ở mép dưới và mép trái để giữ ảnh sáng rực rỡ */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#06070d] via-[#06070d]/20 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#06070d]/85 via-[#06070d]/30 to-transparent sm:w-3/4" />
 
-                <div className="relative z-10 max-w-2xl space-y-3.5">
+                <div className="relative z-10 max-w-2xl space-y-3.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-3 py-1 rounded-full bg-pink-500 text-white text-xs font-extrabold flex items-center gap-1 shadow-lg shadow-pink-500/30">
-                      <Flame className="w-3.5 h-3.5" /> ANIME HOT MÙA NÀY
+                      <Flame className="w-3.5 h-3.5" /> TOP #{heroIdx + 1} TRENDING
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-bold text-amber-300">
+                    {featuredAnime.format && (
+                      <span className="px-2.5 py-1 rounded-full bg-cyan-500/90 text-slate-950 text-xs font-black shadow">
+                        {featuredAnime.format}
+                      </span>
+                    )}
+                    <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-xs font-bold text-amber-300">
                       ★ {featuredAnime.malScore || 8.8}
                     </span>
-                    <span className="px-2.5 py-1 rounded-full bg-violet-500/20 border border-violet-500/40 text-xs font-bold text-violet-300">
+                    <span className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-violet-400/40 text-xs font-bold text-violet-200">
                       {featuredAnime.episodeCurrent || 'Đang phát sóng'}
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-xs font-bold text-emerald-300">
-                      Multi-Server: KKPhim + OPhim + NguonC
                     </span>
                   </div>
 
-                  <h1 className="text-2xl sm:text-4xl font-black text-white leading-tight">
+                  <h1 className="text-2xl sm:text-4xl font-black text-white leading-tight line-clamp-2">
                     {featuredAnime.title}
                   </h1>
-                  {featuredAnime.originTitle && (
-                    <p className="text-xs sm:text-sm text-pink-300 font-semibold">
+                  {featuredAnime.originTitle && featuredAnime.originTitle !== featuredAnime.title && (
+                    <p className="text-xs sm:text-sm text-pink-300 font-bold">
                       {featuredAnime.originTitle} ({featuredAnime.year || 2026})
                     </p>
                   )}
+                  {featuredAnime.synopsis && (
+                    <p className="text-xs sm:text-sm text-slate-200 line-clamp-2 max-w-xl">
+                      {featuredAnime.synopsis}
+                    </p>
+                  )}
 
-                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
                     <button
-                      onClick={() =>
-                        setPlayingAnime({
-                          slug: featuredAnime.slug,
-                          title: featuredAnime.title,
-                          originTitle: featuredAnime.originTitle,
-                          posterUrl: featuredAnime.posterUrl,
-                          bannerUrl: featuredAnime.bannerUrl,
-                          year: featuredAnime.year,
-                          malScore: featuredAnime.malScore
-                        })
-                      }
+                      onClick={() => openAnimePlayer(featuredAnime)}
                       className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-violet-600 hover:from-pink-400 hover:to-violet-500 text-white font-extrabold text-sm shadow-xl shadow-pink-500/30 transition-all hover:scale-105"
                     >
                       <Play className="w-4 h-4 fill-white" />
-                      <span>XEM NGAY (MULTI-SERVER)</span>
+                      <span>XEM NGAY (VIETSUB)</span>
                     </button>
 
                     <button
                       onClick={() =>
                         handleSaveToWatchlist({
-                          id: `anime_${featuredAnime.slug}`,
+                          id: `anime_${featuredAnime.slug || featuredAnime.anilistId}`,
                           title: featuredAnime.title,
                           originTitle: featuredAnime.originTitle,
                           category: MediaCategory.ANIME,
                           status: MediaStatus.PLAN_TO_WATCH,
                           rating: featuredAnime.malScore || 9.0,
-                          description: featuredAnime.originTitle || '',
+                          description: featuredAnime.synopsis || featuredAnime.originTitle || '',
                           imageUrl: featuredAnime.posterUrl,
                           bannerUrl: featuredAnime.bannerUrl,
                           genres: featuredAnime.genres || ['Anime'],
                           createdAt: Date.now(),
-                          slug: featuredAnime.slug,
+                          slug: featuredAnime.slug || `anilist_${featuredAnime.anilistId}`,
                           releaseYear: featuredAnime.year
                         })
                       }
-                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-sm backdrop-blur-md transition-all"
+                      className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-black/50 hover:bg-black/70 border border-white/25 text-white font-bold text-sm backdrop-blur-md transition-all"
                     >
                       <Bookmark className="w-4 h-4" />
                       <span>+ Lưu Vào Tủ</span>
                     </button>
                   </div>
                 </div>
+
+                {/* Nút chuyển Slide + Chấm tròn */}
+                {heroSlides.length > 1 && (
+                  <div className="absolute bottom-5 right-6 z-20 flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 mr-2">
+                      <button
+                        onClick={() => setHeroIdx((i) => (i - 1 + heroSlides.length) % heroSlides.length)}
+                        className="p-1.5 rounded-full bg-black/60 hover:bg-pink-500 text-white border border-white/20 backdrop-blur-md transition-all"
+                        title="Slide trước"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setHeroIdx((i) => (i + 1) % heroSlides.length)}
+                        className="p-1.5 rounded-full bg-black/60 hover:bg-pink-500 text-white border border-white/20 backdrop-blur-md transition-all"
+                        title="Slide tiếp theo"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {heroSlides.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setHeroIdx(idx)}
+                        className={`h-2 rounded-full transition-all ${
+                          idx === heroIdx
+                            ? 'w-7 bg-pink-500'
+                            : 'w-2 bg-white/40 hover:bg-white/80'
+                        }`}
+                        title={`Slide ${idx + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Filter Bar */}
-            <div className="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-extrabold text-slate-400 mr-1 flex items-center gap-1">
-                  <Compass className="w-4 h-4 text-pink-400" /> BỘ LỌC:
-                </span>
+            {/* Dải TIẾP TỤC XEM (Continue Watching) */}
+            {watchHistory.length > 0 && !submittedSearch && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-black text-white flex items-center gap-2">
+                    <History className="w-4 h-4 text-pink-400" />
+                    <span>TIẾP TỤC XEM GẦN ĐÂY</span>
+                  </h2>
+                </div>
+                <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                  {watchHistory.slice(0, 8).map((h) => (
+                    <div
+                      key={h.id}
+                      onClick={() =>
+                        setPlayingAnime({
+                          slug: h.slug,
+                          anilistId: h.anilistId,
+                          title: h.title,
+                          originTitle: h.originTitle,
+                          posterUrl: h.posterUrl,
+                          bannerUrl: h.bannerUrl,
+                          initialEpisodeName: h.episodeName
+                        })
+                      }
+                      className="w-64 shrink-0 glass-panel rounded-2xl p-2.5 flex gap-3 items-center cursor-pointer hover:border-pink-500/50 transition-all group"
+                    >
+                      <img
+                        src={h.posterUrl}
+                        alt={h.title}
+                        className="w-12 h-16 object-cover rounded-xl shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-extrabold text-white truncate group-hover:text-pink-400">
+                          {h.title}
+                        </h4>
+                        <p className="text-[11px] text-pink-400 font-bold mt-0.5">
+                          Đang xem: Tập {h.episodeName}
+                          {h.lastTimeSec ? ` • ${Math.floor(h.lastTimeSec / 60)}p` : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setWatchHistory(watchHistoryApi.remove(h.id));
+                        }}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5"
+                        title="Xóa khỏi lịch sử"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                {/* Lọc Quốc gia: Nhật Bản (Anime) vs Trung Quốc (Hoạt hình 3D) */}
-                {[
-                  { id: 'all', label: '🔥 Tất cả Hoạt Hình' },
-                  { id: 'nhat-ban', label: '🇯🇵 Anime Nhật Bản' },
-                  { id: 'trung-quoc', label: '🇨🇳 Hoạt Hình 3D (Donghua)' }
-                ].map((c) => (
+            {/* Thanh Chế Độ Duyệt & Bộ Lọc Chuyên Sâu Chuẩn AnimeVietsub */}
+            <div className="glass-panel rounded-2xl p-4 space-y-4">
+              {/* Hàng 1: Chọn Hệ Sinh Thái Duyệt Phim */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    key={c.id}
                     onClick={() => {
-                      setSelectedCountry(c.id as any);
+                      setAnimeBrowseMode('anilist');
                       setAnimePage(1);
                     }}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                      selectedCountry === c.id
-                        ? 'bg-pink-500/20 border-pink-500 text-pink-300'
-                        : 'bg-slate-900/80 border-white/10 text-slate-300 hover:text-white'
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-2 ${
+                      animeBrowseMode === 'anilist'
+                        ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white border-pink-400 shadow-lg shadow-pink-500/20'
+                        : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white'
                     }`}
                   >
-                    {c.label}
+                    <Compass className="w-4 h-4" />
+                    <span>🌟 Anime Hub (TV • Movie • Season • Top BXH)</span>
                   </button>
-                ))}
 
-                {/* Chọn Năm */}
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(e.target.value);
-                    setAnimePage(1);
-                  }}
-                  className="bg-slate-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-pink-500"
-                >
-                  <option value="all">Tất cả năm</option>
-                  <option value="2026">Năm 2026</option>
-                  <option value="2025">Năm 2025</option>
-                  <option value="2024">Năm 2024</option>
-                  <option value="2023">Năm 2023</option>
-                  <option value="2022">Năm 2022</option>
-                </select>
-              </div>
+                  <button
+                    onClick={() => {
+                      setAnimeBrowseMode('vn');
+                      setSelectedCountry('trung-quoc');
+                      setAnimePage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-2 ${
+                      animeBrowseMode === 'vn' && selectedCountry === 'trung-quoc'
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-cyan-400 shadow-lg'
+                        : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span>🇨🇳 Hoạt Hình 3D (Donghua Tu Tiên)</span>
+                  </button>
 
-              {/* Đổi nguồn danh sách chính: KKPhim vs OPhim */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400 font-semibold flex items-center gap-1">
-                  <Server className="w-3.5 h-3.5 text-violet-400" /> Nguồn duyệt:
-                </span>
+                  <button
+                    onClick={() => {
+                      setAnimeBrowseMode('vn');
+                      setSelectedCountry('all');
+                      setAnimePage(1);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all border flex items-center gap-2 ${
+                      animeBrowseMode === 'vn' && selectedCountry !== 'trung-quoc'
+                        ? 'bg-gradient-to-r from-rose-500 to-orange-600 text-white border-rose-400 shadow-lg'
+                        : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white'
+                    }`}
+                  >
+                    <Server className="w-4 h-4" />
+                    <span>🇻🇳 Kho Vietsub Trực Tiếp (Server 1 & 2)</span>
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => {
-                    setSelectedSource('kkphim');
-                    setAnimePage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
-                    selectedSource === 'kkphim'
-                      ? 'bg-violet-600 text-white border-violet-400'
-                      : 'bg-slate-900 text-slate-400 border-white/10'
-                  }`}
+                  onClick={handleResetAnimeFilters}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-300 border border-white/10"
                 >
-                  Server KKPhim
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedSource('nguonc');
-                    setAnimePage(1);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
-                    selectedSource === 'nguonc'
-                      ? 'bg-cyan-600 text-white border-cyan-400'
-                      : 'bg-slate-900 text-slate-400 border-white/10'
-                  }`}
-                >
-                  Server NguonC
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Đặt lại bộ lọc</span>
                 </button>
               </div>
+
+              {/* Hàng 2: Bộ lọc Chi tiết theo Chế Độ */}
+              {animeBrowseMode === 'anilist' ? (
+                <div className="space-y-3">
+                  {/* Lọc Dạng Phim + Mùa + Năm + BXH Sort */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">
+                        Dạng Phim (Format)
+                      </label>
+                      <select
+                        value={selectedFormat}
+                        onChange={(e) => {
+                          setSelectedFormat(e.target.value);
+                          setAnimePage(1);
+                        }}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-pink-500"
+                      >
+                        {ANIME_FORMATS.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">
+                        Mùa (Season)
+                      </label>
+                      <select
+                        value={selectedSeason}
+                        onChange={(e) => {
+                          setSelectedSeason(e.target.value);
+                          setAnimePage(1);
+                        }}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-pink-500"
+                      >
+                        {ANIME_SEASONS.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">
+                        Năm Phát Hành
+                      </label>
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => {
+                          setSelectedYear(e.target.value);
+                          setAnimePage(1);
+                        }}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-pink-500"
+                      >
+                        <option value="all">Tất cả năm</option>
+                        {['2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018'].map(
+                          (yr) => (
+                            <option key={yr} value={yr}>
+                              Năm {yr}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">
+                        Xếp Hạng / Top Anime
+                      </label>
+                      <select
+                        value={selectedSort}
+                        onChange={(e) => {
+                          setSelectedSort(e.target.value);
+                          setAnimePage(1);
+                        }}
+                        className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-pink-300 focus:outline-none focus:border-pink-500"
+                      >
+                        {ANIME_SORTS.map((st) => (
+                          <option key={st.id} value={st.id}>
+                            {st.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Thể Loại Chuẩn Otaku */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {ANIME_GENRES.map((g) => (
+                      <button
+                        key={g.id}
+                        onClick={() => {
+                          setSelectedGenre(g.id);
+                          setAnimePage(1);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all border shrink-0 ${
+                          selectedGenre === g.id
+                            ? 'bg-pink-500 text-white border-pink-400 shadow'
+                            : 'bg-slate-900/90 text-slate-300 border-white/10 hover:text-white hover:border-pink-500/40'
+                        }`}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Bộ lọc cho Kho Vietsub Trực Tiếp (KKPhim / NguonC) */
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { id: 'all', label: '🔥 Tất cả Hoạt Hình' },
+                      { id: 'nhat-ban', label: '🇯🇵 Anime Nhật Bản' },
+                      { id: 'trung-quoc', label: '🇨🇳 Hoạt Hình 3D (Donghua)' }
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSelectedCountry(c.id as any);
+                          setAnimePage(1);
+                        }}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                          selectedCountry === c.id
+                            ? 'bg-pink-500/20 border-pink-500 text-pink-300'
+                            : 'bg-slate-900/80 border-white/10 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => {
+                        setSelectedYear(e.target.value);
+                        setAnimePage(1);
+                      }}
+                      className="bg-slate-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-pink-500"
+                    >
+                      <option value="all">Tất cả năm</option>
+                      {['2026', '2025', '2024', '2023', '2022'].map((y) => (
+                        <option key={y} value={y}>
+                          Năm {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-semibold">Nguồn duyệt:</span>
+                    <button
+                      onClick={() => {
+                        setSelectedSource('kkphim');
+                        setAnimePage(1);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                        selectedSource === 'kkphim'
+                          ? 'bg-violet-600 text-white border-violet-400'
+                          : 'bg-slate-900 text-slate-400 border-white/10'
+                      }`}
+                    >
+                      Server 1
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedSource('nguonc');
+                        setAnimePage(1);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                        selectedSource === 'nguonc'
+                          ? 'bg-cyan-600 text-white border-cyan-400'
+                          : 'bg-slate-900 text-slate-400 border-white/10'
+                      }`}
+                    >
+                      Server 2
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Lưới Danh Sách Anime */}
@@ -480,24 +893,30 @@ const App: React.FC = () => {
                   <div key={i} className="aspect-[2/3] rounded-2xl skeleton-shimmer" />
                 ))}
               </div>
+            ) : animeList.length === 0 ? (
+              <div className="glass-panel rounded-2xl p-12 text-center space-y-3">
+                <p className="text-base font-bold text-slate-200">
+                  Không tìm thấy bộ Anime nào khớp với bộ lọc hiện tại!
+                </p>
+                <button
+                  onClick={handleResetAnimeFilters}
+                  className="px-4 py-2 rounded-xl bg-pink-500 text-white text-xs font-bold"
+                >
+                  Đặt lại tất cả bộ lọc
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {animeList.map((anime) => {
-                  const isSaved = watchlist.some((w) => w.slug === anime.slug);
+                  const isSaved = watchlist.some(
+                    (w) =>
+                      (anime.slug && w.slug === anime.slug) ||
+                      w.title.toLowerCase() === anime.title.toLowerCase()
+                  );
                   return (
                     <div
                       key={anime.id}
-                      onClick={() =>
-                        setPlayingAnime({
-                          slug: anime.slug,
-                          title: anime.title,
-                          originTitle: anime.originTitle,
-                          posterUrl: anime.posterUrl,
-                          bannerUrl: anime.bannerUrl,
-                          year: anime.year,
-                          malScore: anime.malScore
-                        })
-                      }
+                      onClick={() => openAnimePlayer(anime)}
                       className="group relative rounded-2xl overflow-hidden bg-[#0c1020] border border-white/10 hover:border-pink-500/60 transition-all duration-300 cursor-pointer flex flex-col shadow-lg hover:shadow-pink-500/15 hover:-translate-y-1"
                     >
                       <div className="relative aspect-[2/3] w-full overflow-hidden bg-slate-900">
@@ -507,10 +926,15 @@ const App: React.FC = () => {
                           loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#090c18] via-transparent to-transparent opacity-80" />
+                        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#090c18] via-[#090c18]/50 to-transparent" />
 
                         {/* Badges */}
-                        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 items-start">
+                          {anime.format && (
+                            <span className="px-2 py-0.5 rounded-md bg-cyan-500/90 text-slate-950 text-[10px] font-black shadow">
+                              {anime.format}
+                            </span>
+                          )}
                           <span className="px-2 py-0.5 rounded-lg bg-pink-600/90 backdrop-blur-md text-white text-[10px] font-extrabold shadow">
                             {anime.episodeCurrent || 'FHD'}
                           </span>
@@ -520,18 +944,18 @@ const App: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             handleSaveToWatchlist({
-                              id: `anime_${anime.slug}`,
+                              id: `anime_${anime.slug || anime.anilistId}`,
                               title: anime.title,
                               originTitle: anime.originTitle,
                               category: MediaCategory.ANIME,
                               status: MediaStatus.PLAN_TO_WATCH,
                               rating: anime.malScore || 9.0,
-                              description: anime.originTitle || '',
+                              description: anime.synopsis || anime.originTitle || '',
                               imageUrl: anime.posterUrl,
                               bannerUrl: anime.bannerUrl,
                               genres: anime.genres || ['Anime'],
                               createdAt: Date.now(),
-                              slug: anime.slug,
+                              slug: anime.slug || `anilist_${anime.anilistId}`,
                               releaseYear: anime.year
                             });
                           }}
@@ -549,7 +973,6 @@ const App: React.FC = () => {
                           )}
                         </button>
 
-                        {/* Hover Play Overlay */}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/45">
                           <div className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-500 to-violet-600 flex items-center justify-center shadow-xl scale-90 group-hover:scale-100 transition-transform">
                             <Play className="w-5 h-5 text-white fill-white ml-0.5" />
@@ -571,7 +994,7 @@ const App: React.FC = () => {
                           <h3 className="text-xs sm:text-sm font-extrabold text-white line-clamp-2 group-hover:text-pink-400 transition-colors">
                             {anime.title}
                           </h3>
-                          {anime.originTitle && (
+                          {anime.originTitle && anime.originTitle !== anime.title && (
                             <p className="text-[11px] text-slate-400 truncate mt-0.5">
                               {anime.originTitle}
                             </p>
@@ -593,7 +1016,6 @@ const App: React.FC = () => {
                   window.scrollTo({ top: 400, behavior: 'smooth' });
                 }}
                 className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
-                title="Trang đầu"
               >
                 « Đầu
               </button>
@@ -620,32 +1042,21 @@ const App: React.FC = () => {
               >
                 Trang tiếp <ChevronRight className="w-4 h-4" />
               </button>
-              <button
-                disabled={animePage >= animeTotalPages}
-                onClick={() => {
-                  setAnimePage(animeTotalPages);
-                  window.scrollTo({ top: 400, behavior: 'smooth' });
-                }}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
-                title="Trang cuối"
-              >
-                Cuối »
-              </button>
             </div>
           </div>
         )}
 
-        {/* 2. TAB LỊCH CHIẾU ANIME TUẦN (JIKAN / MYANIMELIST) */}
+        {/* 2. TAB LỊCH CHIẾU SIMULCAST THẬT THEO GIỜ VIỆT NAM */}
         {activeTab === 'schedule' && (
           <div className="space-y-6">
-            <div className="glass-panel rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="glass-panel rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-pink-400" />
-                  <span>LỊCH CHIẾU ANIME TRONG TUẦN (CHUẨN MYANIMELIST)</span>
+                  <span>LỊCH CHIẾU SIMULCAST THỜI GIAN THỰC (GIỜ VIỆT NAM)</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Dữ liệu đồng bộ trực tiếp từ Jikan v4 API — Bấm vào bất kỳ bộ nào để Smart Matcher tự động tìm link phát Vietsub!
+                  Đồng bộ trực tiếp giờ phát sóng từ Nhật Bản — Bấm vào bất kỳ bộ nào để mở Server Vietsub ngay!
                 </p>
               </div>
 
@@ -670,19 +1081,19 @@ const App: React.FC = () => {
               <div className="py-20 flex flex-col items-center gap-3">
                 <Loader2 className="w-9 h-9 text-pink-500 animate-spin" />
                 <p className="text-sm font-bold text-slate-300">
-                  Đang tải lịch chiếu từ MyAnimeList (Jikan API)...
+                  Đang đồng bộ lịch phát sóng Simulcast...
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {scheduleList.map((item) => {
+                {scheduleList.map((item, idx) => {
                   const poster =
                     item.images?.webp?.large_image_url ||
                     item.images?.jpg?.large_image_url ||
                     '';
                   return (
                     <div
-                      key={item.mal_id}
+                      key={`${item.mal_id}_${idx}`}
                       className="glass-panel rounded-2xl p-4 flex gap-4 hover:border-pink-500/50 transition-all group"
                     >
                       <img
@@ -692,26 +1103,28 @@ const App: React.FC = () => {
                       />
                       <div className="flex-1 min-w-0 flex flex-col justify-between">
                         <div className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold">
-                              {item.broadcast?.time ? `🕒 ${item.broadcast.time} (JST)` : 'Simulcast'}
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {item.broadcast?.time || 'Simulcast'}
+                              {item.airingEpisode ? ` • Tập ${item.airingEpisode}` : ''}
                             </span>
-                            {item.score && (
-                              <span className="text-xs font-extrabold text-amber-300">
-                                ★ {item.score}
+                            {item.timeUntilAiring !== undefined && (
+                              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-bold">
+                                {formatCountdown(item.timeUntilAiring)}
                               </span>
                             )}
                           </div>
                           <h3 className="text-sm font-extrabold text-white line-clamp-2 group-hover:text-pink-400">
                             {item.title}
                           </h3>
-                          {item.title_english && (
+                          {item.title_english && item.title_english !== item.title && (
                             <p className="text-[11px] text-slate-400 truncate">
                               {item.title_english}
                             </p>
                           )}
                           <p className="text-xs text-slate-400 line-clamp-2">
-                            {item.synopsis || 'Đang phát sóng hàng tuần tại Nhật Bản.'}
+                            {item.synopsis || 'Đang phát sóng hàng tuần.'}
                           </p>
                         </div>
 
@@ -719,9 +1132,11 @@ const App: React.FC = () => {
                           <button
                             onClick={() =>
                               setPlayingAnime({
-                                title: item.title_english || item.title,
-                                originTitle: item.title,
+                                anilistId: item.anilistId,
+                                title: item.title,
+                                originTitle: item.title_english,
                                 posterUrl: poster,
+                                bannerUrl: item.bannerUrl,
                                 synopsis: item.synopsis,
                                 year: item.year,
                                 malScore: item.score
@@ -742,7 +1157,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* 3. TAB ĐỌC MANGA / MANHWA (OTRUYEN API) */}
+        {/* 3. TAB ĐỌC MANGA / MANHWA */}
         {activeTab === 'manga' && (
           <div className="space-y-6">
             <div className="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
@@ -839,7 +1254,6 @@ const App: React.FC = () => {
                   window.scrollTo({ top: 300, behavior: 'smooth' });
                 }}
                 className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
-                title="Trang đầu"
               >
                 « Đầu
               </button>
@@ -877,7 +1291,6 @@ const App: React.FC = () => {
                   window.scrollTo({ top: 300, behavior: 'smooth' });
                 }}
                 className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-30 text-xs font-bold border border-white/10"
-                title="Trang cuối"
               >
                 Cuối »
               </button>
@@ -910,7 +1323,10 @@ const App: React.FC = () => {
                         setReadingMangaSlug(item.slug);
                       } else {
                         setPlayingAnime({
-                          slug: item.slug,
+                          slug: item.slug?.startsWith('anilist_') ? undefined : item.slug,
+                          anilistId: item.slug?.startsWith('anilist_')
+                            ? parseInt(item.slug.replace('anilist_', ''), 10)
+                            : undefined,
                           title: item.title,
                           originTitle: item.originTitle,
                           posterUrl: item.imageUrl,
@@ -997,7 +1413,7 @@ const App: React.FC = () => {
                       key={item.id}
                       onClick={() =>
                         setPlayingAnime({
-                          slug: item.slug,
+                          slug: item.slug?.startsWith('anilist_') ? undefined : item.slug,
                           title: item.title,
                           originTitle: item.originTitle,
                           posterUrl: item.imageUrl,
@@ -1045,6 +1461,8 @@ const App: React.FC = () => {
         targetAnime={playingAnime}
         watchlist={watchlist}
         onSaveToWatchlist={handleSaveToWatchlist}
+        onSwitchAnime={(nextAnime) => setPlayingAnime(nextAnime)}
+        onHistoryUpdated={() => setWatchHistory(watchHistoryApi.getAll())}
       />
 
       <MangaReaderModal
@@ -1059,4 +1477,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

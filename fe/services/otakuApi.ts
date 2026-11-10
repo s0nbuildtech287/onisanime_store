@@ -1,15 +1,19 @@
 import {
   AnimeCardItem,
   AnimeEpisode,
+  AnimeRelationItem,
   MangaCardItem,
   MediaItem,
   ScheduleAnimeItem,
-  StreamServerGroup
+  StreamServerGroup,
+  WatchHistoryItem
 } from '../types';
 
 const PHIM_API_BASE = 'https://phimapi.com';
 const NGUONC_API_BASE = 'https://phim.nguonc.com';
+const ANILIST_GRAPHQL_URL = 'https://graphql.anilist.co';
 const LOCAL_DB_KEY = 'onisanime_db_v1';
+const WATCH_HISTORY_KEY = 'onisanime_watch_history_v1';
 
 export function formatPhimImg(url?: string): string {
   if (!url) return 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-gHSraOSa0nBG.jpg';
@@ -17,29 +21,373 @@ export function formatPhimImg(url?: string): string {
   return `https://phimimg.com/${url.replace(/^\//, '')}`;
 }
 
+// ==================== 0. ANILIST GRAPHQL ENGINE (CHUẨN OTAKU) ====================
+
+async function queryAniList(query: string, variables: Record<string, any> = {}) {
+  const res = await fetch(ANILIST_GRAPHQL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ query, variables })
+  });
+  if (!res.ok) throw new Error(`AniList HTTP ${res.status}`);
+  return await res.json();
+}
+
+export const anilistApi = {
+  // Lấy danh sách Anime theo Dạng phim, Mùa, Năm, Thể loại, Tag (Isekai/Harem), BXH Top
+  getFilteredAnime: async (params: {
+    page?: number;
+    perPage?: number;
+    format?: string;     // 'TV' | 'MOVIE' | 'OVA' | 'ONA' | 'SPECIAL' | 'all'
+    season?: string;     // 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL' | 'all'
+    seasonYear?: string; // '2026' | '2025' ... | 'all'
+    genre?: string;      // 'Action' | 'Fantasy' ... | 'all'
+    tag?: string;        // 'Isekai' | 'Harem' ... | 'all'
+    sort?: string;       // 'TRENDING_DESC' | 'SCORE_DESC' | 'POPULARITY_DESC' | 'FAVOURITES_DESC'
+    search?: string;
+  }): Promise<{ items: AnimeCardItem[]; totalPages: number }> => {
+    try {
+      const variables: Record<string, any> = {
+        page: params.page || 1,
+        perPage: params.perPage || 24,
+        sort: [params.sort || 'TRENDING_DESC']
+      };
+
+      if (params.format && params.format !== 'all') variables.format = params.format;
+      if (params.season && params.season !== 'all') variables.season = params.season;
+      if (params.seasonYear && params.seasonYear !== 'all') variables.seasonYear = parseInt(params.seasonYear, 10);
+      if (params.genre && params.genre !== 'all') variables.genre = params.genre;
+      if (params.tag && params.tag !== 'all') variables.tag = params.tag;
+      if (params.search && params.search.trim()) {
+        variables.search = params.search.trim();
+        if (!params.sort || params.sort === 'TRENDING_DESC') {
+          variables.sort = ['SEARCH_MATCH'];
+        }
+      }
+
+      const query = `
+        query (
+          $page: Int,
+          $perPage: Int,
+          $format: MediaFormat,
+          $season: MediaSeason,
+          $seasonYear: Int,
+          $genre: String,
+          $tag: String,
+          $sort: [MediaSort],
+          $search: String
+        ) {
+          Page(page: $page, perPage: $perPage) {
+            pageInfo {
+              total
+              lastPage
+              currentPage
+              hasNextPage
+            }
+            media(
+              type: ANIME,
+              isAdult: false,
+              format: $format,
+              season: $season,
+              seasonYear: $seasonYear,
+              genre: $genre,
+              tag: $tag,
+              sort: $sort,
+              search: $search
+            ) {
+              id
+              idMal
+              format
+              season
+              seasonYear
+              episodes
+              averageScore
+              genres
+              synonyms
+              description(asHtml: false)
+              title {
+                romaji
+                english
+                native
+              }
+              coverImage {
+                extraLarge
+                large
+              }
+              bannerImage
+              studios(isMain: true) {
+                nodes {
+                  name
+                }
+              }
+              trailer {
+                id
+                site
+              }
+              nextAiringEpisode {
+                airingAt
+                episode
+                timeUntilAiring
+              }
+            }
+          }
+        }
+      `;
+
+      const json = await queryAniList(query, variables);
+      const pageData = json?.data?.Page;
+      const rawList = pageData?.media || [];
+
+      const items: AnimeCardItem[] = rawList.map((m: any) => {
+        const displayTitle = m.title?.english || m.title?.romaji || 'Anime';
+        const romaji = m.title?.romaji;
+        const score = m.averageScore ? Math.round((m.averageScore / 10) * 10) / 10 : 8.5;
+        const epText = m.nextAiringEpisode
+          ? `Tập ${m.nextAiringEpisode.episode - 1} • Còn ${Math.max(1, Math.floor(m.nextAiringEpisode.timeUntilAiring / 86400))} ngày`
+          : m.episodes
+          ? `${m.episodes} Tập`
+          : m.format || 'TV';
+
+        return {
+          id: `anilist_${m.id}`,
+          slug: '', // Sẽ được Smart Matcher đối chiếu sang KKPhim/NguonC khi bấm xem
+          anilistId: m.id,
+          malId: m.idMal,
+          title: displayTitle,
+          originTitle: romaji,
+          posterUrl: m.coverImage?.extraLarge || m.coverImage?.large || '',
+          bannerUrl: m.bannerImage || m.coverImage?.extraLarge || '',
+          year: m.seasonYear || 2026,
+          season: m.season,
+          format: m.format,
+          episodeCurrent: epText,
+          totalEpisodes: m.episodes,
+          malScore: score,
+          genres: m.genres || [],
+          synopsis: (m.description || '').replace(/<[^>]+>/g, ''),
+          studios: (m.studios?.nodes || []).map((s: any) => s.name),
+          synonyms: m.synonyms || [],
+          trailerUrl: m.trailer?.site === 'youtube' && m.trailer?.id ? `https://www.youtube.com/embed/${m.trailer.id}` : undefined,
+          nextAiring: m.nextAiringEpisode || undefined,
+          source: 'anilist'
+        };
+      });
+
+      return {
+        items,
+        totalPages: pageData?.pageInfo?.lastPage || 50
+      };
+    } catch (err) {
+      console.warn('AniList filter error:', err);
+      return { items: [], totalPages: 1 };
+    }
+  },
+
+  // Lấy Chi tiết & Các Phần Liên Quan (Season 1 -> Movie -> Season 2)
+  getAnimeRelations: async (anilistId: number): Promise<{
+    relations: AnimeRelationItem[];
+    studios: string[];
+    trailerUrl?: string;
+  }> => {
+    try {
+      const query = `
+        query ($id: Int) {
+          Media(id: $id, type: ANIME) {
+            studios(isMain: true) {
+              nodes { name }
+            }
+            trailer { id site }
+            relations {
+              edges {
+                relationType
+                node {
+                  id
+                  type
+                  format
+                  seasonYear
+                  averageScore
+                  title { romaji english }
+                  coverImage { large }
+                  bannerImage
+                }
+              }
+            }
+          }
+        }
+      `;
+      const json = await queryAniList(query, { id: anilistId });
+      const media = json?.data?.Media;
+      if (!media) return { relations: [], studios: [] };
+
+      const allowedTypes = ['PREQUEL', 'SEQUEL', 'SIDE_STORY', 'PARENT', 'SPIN_OFF'];
+      const labelMap: Record<string, string> = {
+        PREQUEL: 'Phần trước',
+        SEQUEL: 'Phần tiếp theo',
+        SIDE_STORY: 'Ngoại truyện',
+        PARENT: 'Bản gốc',
+        SPIN_OFF: 'Spin-off'
+      };
+
+      const relations: AnimeRelationItem[] = (media.relations?.edges || [])
+        .filter((e: any) => e.node?.type === 'ANIME' && allowedTypes.includes(e.relationType))
+        .map((e: any) => ({
+          id: e.node.id,
+          relationType: labelMap[e.relationType] || e.relationType,
+          title: e.node.title?.english || e.node.title?.romaji || '',
+          englishTitle: e.node.title?.romaji,
+          format: e.node.format,
+          posterUrl: e.node.coverImage?.large || '',
+          bannerUrl: e.node.bannerImage || e.node.coverImage?.large || '',
+          year: e.node.seasonYear,
+          score: e.node.averageScore ? Math.round((e.node.averageScore / 10) * 10) / 10 : undefined
+        }));
+
+      return {
+        relations,
+        studios: (media.studios?.nodes || []).map((s: any) => s.name),
+        trailerUrl: media.trailer?.site === 'youtube' && media.trailer?.id
+          ? `https://www.youtube.com/embed/${media.trailer.id}`
+          : undefined
+      };
+    } catch (_) {
+      return { relations: [], studios: [] };
+    }
+  },
+
+  // Lịch chiếu Simulcast thật 7 ngày trong tuần theo múi giờ Việt Nam
+  getRealWeeklySchedule: async (dayIndex: number = 0): Promise<ScheduleAnimeItem[]> => {
+    try {
+      // dayIndex: 0 = Thứ 2 (Monday) ... 6 = Chủ nhật (Sunday)
+      const now = new Date();
+      const currentDayJs = now.getDay(); // 0=CN, 1=T2 ... 6=T7
+      const currentMonIdx = currentDayJs === 0 ? 6 : currentDayJs - 1;
+      const diffDays = dayIndex - currentMonIdx;
+
+      const targetDate = new Date(now);
+      targetDate.setDate(now.getDate() + diffDays);
+      targetDate.setHours(0, 0, 0, 0);
+
+      const startTs = Math.floor(targetDate.getTime() / 1000);
+      const endTs = startTs + 86400;
+
+      const query = `
+        query ($start: Int, $end: Int) {
+          Page(page: 1, perPage: 30) {
+            airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
+              airingAt
+              episode
+              timeUntilAiring
+              media {
+                id
+                idMal
+                isAdult
+                format
+                seasonYear
+                episodes
+                averageScore
+                genres
+                description(asHtml: false)
+                title { romaji english native }
+                coverImage { large }
+                bannerImage
+              }
+            }
+          }
+        }
+      `;
+
+      const json = await queryAniList(query, { start: startTs, end: endTs });
+      const schedules = json?.data?.Page?.airingSchedules || [];
+
+      return schedules
+        .filter((s: any) => s.media && !s.media.isAdult)
+        .map((s: any) => {
+          const m = s.media;
+          const airDate = new Date(s.airingAt * 1000);
+          const hh = String(airDate.getHours()).padStart(2, '0');
+          const mm = String(airDate.getMinutes()).padStart(2, '0');
+
+          return {
+            mal_id: m.idMal || m.id,
+            anilistId: m.id,
+            title: m.title?.english || m.title?.romaji || 'Anime',
+            title_english: m.title?.romaji,
+            title_japanese: m.title?.native,
+            format: m.format,
+            images: {
+              jpg: { large_image_url: m.coverImage?.large || '' },
+              webp: { large_image_url: m.coverImage?.large || '' }
+            },
+            bannerUrl: m.bannerImage || m.coverImage?.large || '',
+            score: m.averageScore ? Math.round((m.averageScore / 10) * 10) / 10 : undefined,
+            episodes: m.episodes,
+            airingEpisode: s.episode,
+            airingAt: s.airingAt,
+            timeUntilAiring: s.timeUntilAiring,
+            broadcast: {
+              time: `${hh}:${mm} (VN)`
+            },
+            synopsis: (m.description || '').replace(/<[^>]+>/g, ''),
+            year: m.seasonYear,
+            genres: (m.genres || []).map((g: string) => ({ name: g }))
+          };
+        });
+    } catch (err) {
+      console.warn('AniList real schedule error:', err);
+      return [];
+    }
+  }
+};
+
 // ==================== 1. ANIME DISCOVERY & FILTER ENGINE ====================
 
 export const animeApi = {
-  // Lấy danh sách Anime / Hoạt hình (Hỗ trợ lọc Nhật Bản, Trung Quốc 3D, Năm, Tìm kiếm)
-  getAnimeList: async (params: {
-    page?: number;
-    country?: string; // 'nhat-ban' | 'trung-quoc' | 'all'
-    genre?: string;
-    year?: string;
-    keyword?: string;
-    source?: 'kkphim' | 'nguonc';
-  }): Promise<{ items: AnimeCardItem[]; totalPages: number }> => {
-    const page = params.page || 1;
+  // Tìm kiếm hợp nhất SONG SONG trên cả Server 1 + Server 2 + AniList
+  searchAllSources: async (
+    keyword: string,
+    page: number = 1
+  ): Promise<{ items: AnimeCardItem[]; totalPages: number }> => {
+    const trimmed = keyword.trim();
+    if (!trimmed) return { items: [], totalPages: 1 };
 
-    try {
-      // 1. Nếu có từ khóa tìm kiếm
-      if (params.keyword && params.keyword.trim()) {
-        const kw = encodeURIComponent(params.keyword.trim());
-        const res = await fetch(`${PHIM_API_BASE}/v1/api/tim-kiem?keyword=${kw}&page=${page}`);
-        if (!res.ok) throw new Error('Search failed');
-        const data = await res.json();
-        const rawItems = data?.data?.items || [];
-        const items: AnimeCardItem[] = rawItems.map((m: any) => ({
+    const encodedKw = encodeURIComponent(trimmed);
+    const hasVietnameseAccents = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(trimmed);
+
+    const [kkRes, nguoncRes, anilistRes] = await Promise.allSettled([
+      fetch(`${PHIM_API_BASE}/v1/api/tim-kiem?keyword=${encodedKw}&page=${page}`).then((r) => r.json()),
+      fetch(`${NGUONC_API_BASE}/api/films/search?keyword=${encodedKw}&page=${page}`).then((r) => r.json()),
+      !hasVietnameseAccents
+        ? anilistApi.getFilteredAnime({ search: trimmed, page, perPage: 16 })
+        : Promise.resolve({ items: [], totalPages: 1 })
+    ]);
+
+    const combined: AnimeCardItem[] = [];
+    const seenSlugs = new Set<string>();
+    const seenTitles = new Set<string>();
+
+    const normalizeKey = (s?: string) =>
+      (s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
+
+    let maxTotalPages = 1;
+
+    // 1. Kết quả từ Server 1 (KKPhim) - Ưu tiên Hoạt hình lên trước
+    if (kkRes.status === 'fulfilled' && Array.isArray(kkRes.value?.data?.items)) {
+      maxTotalPages = Math.max(maxTotalPages, kkRes.value?.data?.params?.pagination?.totalPages || 1);
+      const rawKK = [...kkRes.value.data.items].sort((a: any, b: any) => {
+        const aAnime = a.type === 'hoathinh' ? 1 : 0;
+        const bAnime = b.type === 'hoathinh' ? 1 : 0;
+        return bAnime - aAnime;
+      });
+      for (const m of rawKK) {
+        if (!m.slug) continue;
+        seenSlugs.add(m.slug);
+        seenTitles.add(normalizeKey(m.name));
+        if (m.origin_name) seenTitles.add(normalizeKey(m.origin_name));
+        combined.push({
           id: m._id || m.slug,
           slug: m.slug,
           title: m.name,
@@ -53,12 +401,78 @@ export const animeApi = {
           country: m.country?.[0]?.name || 'Anime',
           malScore: m.tmdb?.vote_average ? Math.round(m.tmdb.vote_average * 10) / 10 : 8.6,
           genres: (m.category || []).map((c: any) => c.name),
+          format: m.type === 'hoathinh' ? 'ANIME' : undefined,
           source: 'kkphim'
-        }));
-        return {
-          items,
-          totalPages: data?.data?.params?.pagination?.totalPages || 1
-        };
+        });
+      }
+    }
+
+    // 2. Kết quả từ Server 2 (NguonC) - Bổ sung các phim chỉ Server 2 mới có
+    if (nguoncRes.status === 'fulfilled' && Array.isArray(nguoncRes.value?.items)) {
+      maxTotalPages = Math.max(maxTotalPages, nguoncRes.value?.paginate?.total_page || 1);
+      for (const m of nguoncRes.value.items) {
+        const normTitle = normalizeKey(m.name);
+        const normOrig = normalizeKey(m.original_name);
+        if ((m.slug && seenSlugs.has(m.slug)) || (normTitle && seenTitles.has(normTitle))) {
+          continue;
+        }
+        if (m.slug) seenSlugs.add(m.slug);
+        if (normTitle) seenTitles.add(normTitle);
+        if (normOrig) seenTitles.add(normOrig);
+        combined.push({
+          id: m.id || m.slug,
+          slug: m.slug,
+          title: m.name,
+          originTitle: m.original_name,
+          posterUrl: m.poster_url || m.thumb_url,
+          bannerUrl: m.thumb_url || m.poster_url,
+          year: m.year || 2026,
+          episodeCurrent: m.current_episode || 'FHD',
+          quality: m.quality || 'FHD 1080p',
+          lang: m.language || 'Vietsub',
+          country: 'Anime',
+          malScore: 8.5,
+          synopsis: m.description,
+          genres: ['Vietsub'],
+          source: 'nguonc'
+        });
+      }
+    }
+
+    // 3. Kết quả từ AniList (nếu từ khóa tiếng Anh/Romaji)
+    if (anilistRes.status === 'fulfilled' && Array.isArray(anilistRes.value?.items)) {
+      maxTotalPages = Math.max(maxTotalPages, anilistRes.value.totalPages || 1);
+      for (const m of anilistRes.value.items) {
+        const normTitle = normalizeKey(m.title);
+        const normOrig = normalizeKey(m.originTitle);
+        if (seenTitles.has(normTitle) || (normOrig && seenTitles.has(normOrig))) {
+          continue;
+        }
+        combined.push(m);
+      }
+    }
+
+    return {
+      items: combined,
+      totalPages: maxTotalPages
+    };
+  },
+
+  // Lấy danh sách Anime / Hoạt hình (Hỗ trợ lọc Nhật Bản, Trung Quốc 3D, Năm, Tìm kiếm)
+  getAnimeList: async (params: {
+    page?: number;
+    country?: string; // 'nhat-ban' | 'trung-quoc' | 'all'
+    genre?: string;
+    year?: string;
+    keyword?: string;
+    source?: 'kkphim' | 'nguonc';
+  }): Promise<{ items: AnimeCardItem[]; totalPages: number }> => {
+    const page = params.page || 1;
+
+    try {
+      // 1. Nếu có từ khóa tìm kiếm -> Dùng Tìm kiếm hợp nhất đa nguồn
+      if (params.keyword && params.keyword.trim()) {
+        return await animeApi.searchAllSources(params.keyword.trim(), page);
       }
 
       // 2. Nếu chọn nguồn NguonC
@@ -203,8 +617,8 @@ async function fetchKKPhimStream(slug?: string, searchTitle?: string): Promise<{
             .filter((s: any) => s.server_data && s.server_data.length > 0)
             .map((s: any) => ({
               sourceId: 'kkphim',
-              sourceLabel: '🇻🇳 KKPhim',
-              serverName: `KKPhim • ${s.server_name}`,
+              sourceLabel: '🇻🇳 Server 1',
+              serverName: `Server 1 • ${s.server_name}`,
               badgeColor: 'from-pink-500 to-rose-600',
               episodes: s.server_data.map((ep: any) => ({
                 name: ep.name || ep.slug,
@@ -234,8 +648,8 @@ async function fetchKKPhimStream(slug?: string, searchTitle?: string): Promise<{
                 .filter((s: any) => s.server_data && s.server_data.length > 0)
                 .map((s: any) => ({
                   sourceId: 'kkphim',
-                  sourceLabel: '🇻🇳 KKPhim',
-                  serverName: `KKPhim • ${s.server_name}`,
+                  sourceLabel: '🇻🇳 Server 1',
+                  serverName: `Server 1 • ${s.server_name}`,
                   badgeColor: 'from-pink-500 to-rose-600',
                   episodes: s.server_data.map((ep: any) => ({
                     name: ep.name || ep.slug,
@@ -269,8 +683,8 @@ async function fetchNguonCStream(slug?: string, searchTitle?: string): Promise<{
         .filter((s: any) => s.items && s.items.length > 0)
         .map((s: any) => ({
           sourceId: 'nguonc' as const,
-          sourceLabel: '⚡ NguonC',
-          serverName: `NguonC • ${s.server_name}`,
+          sourceLabel: '⚡ Server 2',
+          serverName: `Server 2 • ${s.server_name}`,
           badgeColor: 'from-cyan-500 to-blue-600',
           episodes: s.items.map((ep: any) => ({
             name: ep.name || ep.slug,
@@ -312,10 +726,22 @@ async function fetchNguonCStream(slug?: string, searchTitle?: string): Promise<{
   return { servers: [] };
 }
 
+// Helper rút gọn tên (bỏ "Season 2", "2nd Season", "Part 2"...) để dễ khớp trên KKPhim/NguonC
+function simplifyAnimeTitle(title: string): string {
+  return title
+    .replace(/\(.*?\)/g, '')
+    .replace(/\b(season|part|cour)\s*\d+\b/gi, '')
+    .replace(/\b\d+(st|nd|rd|th)\s+season\b/gi, '')
+    .replace(/[:\-–].*$/, '')
+    .trim();
+}
+
 export async function resolveMultiServerStreams(target: {
   slug?: string;
   title: string;
   originTitle?: string;
+  synonyms?: string[];
+  customSearchKeyword?: string;
 }): Promise<{
   title: string;
   originTitle?: string;
@@ -328,29 +754,55 @@ export async function resolveMultiServerStreams(target: {
   trailerUrl?: string;
   servers: StreamServerGroup[];
 }> {
-  const searchQuery = target.originTitle || target.title;
+  let primaryInfo: any = null;
+  let allServers: StreamServerGroup[] = [];
 
-  // Quét song song 2 server lớn
-  const [kkRes, nguoncRes] = await Promise.all([
-    fetchKKPhimStream(target.slug, target.title),
-    fetchNguonCStream(target.slug, searchQuery)
-  ]);
-
-  let allServers: StreamServerGroup[] = [
-    ...kkRes.servers,
-    ...nguoncRes.servers
-  ];
-
-  // Nếu chưa có server nào, quét lần 2 theo originTitle
-  if (allServers.length === 0 && target.originTitle && target.originTitle !== target.title) {
-    const [kk2, nguonc2] = await Promise.all([
-      fetchKKPhimStream(undefined, target.originTitle),
-      fetchNguonCStream(undefined, target.originTitle)
+  // Nếu người dùng nhập tay từ khóa tìm lại trong player
+  if (target.customSearchKeyword && target.customSearchKeyword.trim()) {
+    const kw = target.customSearchKeyword.trim();
+    const [kkRes, nguoncRes] = await Promise.all([
+      fetchKKPhimStream(undefined, kw),
+      fetchNguonCStream(undefined, kw)
     ]);
-    allServers = [...kk2.servers, ...nguonc2.servers];
-  }
+    allServers = [...kkRes.servers, ...nguoncRes.servers];
+    primaryInfo = kkRes.movieInfo || nguoncRes.movieInfo;
+  } else {
+    // 1. Quét ưu tiên theo slug & title + originTitle
+    const searchQuery = target.originTitle || target.title;
+    const [kkRes, nguoncRes] = await Promise.all([
+      fetchKKPhimStream(target.slug, target.title),
+      fetchNguonCStream(target.slug, searchQuery)
+    ]);
+    allServers = [...kkRes.servers, ...nguoncRes.servers];
+    primaryInfo = kkRes.movieInfo || nguoncRes.movieInfo;
 
-  const primaryInfo = kkRes.movieInfo || nguoncRes.movieInfo;
+    // 2. Nếu chưa ra, thử dò lần lượt theo các từ khóa biến thể (originTitle, synonyms, tên rút gọn)
+    if (allServers.length === 0) {
+      const candidateTitles = Array.from(
+        new Set(
+          [
+            target.originTitle,
+            simplifyAnimeTitle(target.title),
+            target.originTitle ? simplifyAnimeTitle(target.originTitle) : undefined,
+            ...(target.synonyms || []).filter((s) => /^[a-zA-Z0-9\s\-:!'.,]+$/.test(s)).slice(0, 2)
+          ].filter((t): t is string => !!t && t.length >= 2)
+        )
+      );
+
+      for (const kw of candidateTitles) {
+        if (allServers.length > 0) break;
+        const [kk2, nguonc2] = await Promise.all([
+          fetchKKPhimStream(undefined, kw),
+          fetchNguonCStream(undefined, kw)
+        ]);
+        if (kk2.servers.length > 0 || nguonc2.servers.length > 0) {
+          allServers = [...kk2.servers, ...nguonc2.servers];
+          primaryInfo = kk2.movieInfo || nguonc2.movieInfo;
+          break;
+        }
+      }
+    }
+  }
 
   return {
     title: primaryInfo?.name || target.title,
@@ -615,5 +1067,55 @@ export const storageApi = {
         body: JSON.stringify(items)
       });
     } catch (_) {}
+  }
+};
+
+// ==================== 5. WATCH PROGRESS & HISTORY ====================
+
+export const watchHistoryApi = {
+  getAll: (): WatchHistoryItem[] => {
+    try {
+      const raw = localStorage.getItem(WATCH_HISTORY_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)) : [];
+    } catch (_) {
+      return [];
+    }
+  },
+
+  getItem: (keyOrTitle: string): WatchHistoryItem | undefined => {
+    const list = watchHistoryApi.getAll();
+    const low = keyOrTitle.toLowerCase();
+    return list.find((h) => h.id === keyOrTitle || h.slug === keyOrTitle || h.title.toLowerCase() === low);
+  },
+
+  saveProgress: (entry: Omit<WatchHistoryItem, 'watchedEpisodes' | 'updatedAt'> & { episodeName: string }) => {
+    const list = watchHistoryApi.getAll();
+    const idx = list.findIndex(
+      (h) => h.id === entry.id || (entry.slug && h.slug === entry.slug) || h.title.toLowerCase() === entry.title.toLowerCase()
+    );
+    const prevWatched = idx >= 0 ? list[idx].watchedEpisodes || [] : [];
+    const watchedSet = Array.from(new Set([...prevWatched, entry.episodeName]));
+
+    const updated: WatchHistoryItem = {
+      ...entry,
+      watchedEpisodes: watchedSet,
+      updatedAt: Date.now()
+    };
+
+    const nextList = [updated, ...list.filter((_, i) => i !== idx)].slice(0, 24);
+    try {
+      localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(nextList));
+    } catch (_) {}
+    return nextList;
+  },
+
+  remove: (id: string) => {
+    const list = watchHistoryApi.getAll().filter((h) => h.id !== id);
+    try {
+      localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(list));
+    } catch (_) {}
+    return list;
   }
 };
