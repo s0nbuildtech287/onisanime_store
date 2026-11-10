@@ -1,4 +1,5 @@
 import { resolveMangaImage } from '../lib/mangaSources.js';
+import { forwardImageViaVnProxy } from '../lib/proxyForward.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,6 +18,19 @@ export default async function handler(req, res) {
     if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).end();
       return;
+    }
+
+    const isForeignCdn = /(mangadex\.(org|network)|readdetectiveconan\.com|mangapill\.com)/i.test(
+      targetUrl
+    );
+    if (!isForeignCdn) {
+      const proxied = await forwardImageViaVnProxy({ url: targetUrl, title, alId });
+      if (proxied && proxied.status === 200 && proxied.buffer) {
+        res.setHeader('Content-Type', proxied.contentType || 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800');
+        res.status(200).send(proxied.buffer);
+        return;
+      }
     }
 
     const result = await resolveMangaImage({ targetUrl, title, alId });

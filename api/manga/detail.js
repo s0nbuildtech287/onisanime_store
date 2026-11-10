@@ -1,4 +1,5 @@
 import { resolveMangaDetail } from '../../lib/mangaSources.js';
+import { forwardJsonViaVnProxy } from '../../lib/proxyForward.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,13 +11,21 @@ export default async function handler(req, res) {
 
   try {
     const urlObj = new URL(req.url || '', 'http://localhost');
-    const slug = req.query?.slug || urlObj.searchParams.get('slug');
+    const slug = String(req.query?.slug || urlObj.searchParams.get('slug') || '');
     if (!slug) {
       res.status(400).json({ error: 'Missing slug', chapters: [] });
       return;
     }
 
-    const detail = await resolveMangaDetail(String(slug));
+    if (!slug.startsWith('md_') && !slug.startsWith('mp_')) {
+      const proxied = await forwardJsonViaVnProxy('/api/manga/detail', { slug });
+      if (proxied && proxied.title && Array.isArray(proxied.chapters) && proxied.chapters.length > 0) {
+        res.status(200).json(proxied);
+        return;
+      }
+    }
+
+    const detail = await resolveMangaDetail(slug);
     if (!detail || !detail.title) {
       res.status(404).json({ error: 'Manga chapters not available', chapters: [] });
       return;
