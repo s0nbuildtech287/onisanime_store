@@ -159,4 +159,21 @@ export interface MediaItem {
   username?: string;
 }
 
-export type AppTab = 'anime' | 'schedule' | 'manga' | 'watchlist' | 'ranking';
+export interface NewsArticleItem {
+  id: string;
+  title: string;
+  summary: string;
+  imageUrl: string;
+  link: string;
+  publishedAt: string;
+  source: string;
+  region: 'vn' | 'global';
+  author?: string;
+}
+
+export interface NewsContentBlock {
+  type: 'text' | 'image';
+  content: string;
+}
+
+export type AppTab = 'anime' | 'schedule' | 'manga' | 'news' | 'ranking';

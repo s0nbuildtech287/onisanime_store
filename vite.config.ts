@@ -307,6 +307,302 @@ function onisanimeBackendPlugin(): Plugin {
           res.end();
         }
       });
+
+      // 6. News List Crawler (/api/news/list?region=all|vn|global&keyword=...)
+      const decodeNewsHtml = (str = '') =>
+        String(str)
+          .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+          .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;|&#039;/g, "'")
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      const stripNewsTags = (html = '') => decodeNewsHtml(String(html).replace(/<[^>]+>/g, ' '));
+
+      const extractNewsAttr = (tag = '', attrName: string) => {
+        const re = new RegExp(`${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
+        const m = tag.match(re);
+        return ((m && (m[1] || m[2] || m[3])) || '').trim();
+      };
+
+      server.middlewares.use('/api/news/list', async (req, res) => {
+        try {
+          const urlObj = new URL(req.url || '', 'http://localhost');
+          const region = urlObj.searchParams.get('region') || 'all';
+          const keyword = (urlObj.searchParams.get('keyword') || '').trim().toLowerCase();
+
+          const fetchGameK = async () => {
+            try {
+              const r = await fetch('https://gamek.vn/manga-film.chn', {
+                headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'vi-VN,vi;q=0.9' }
+              });
+              if (!r.ok) return [];
+              const html = await r.text();
+              const body = html.slice(html.indexOf('<body'));
+              const idx = body.indexOf('newsupdate');
+              if (idx === -1) return [];
+              const section = body.slice(idx, idx + 80000);
+              const articles = section.split('<article').slice(1);
+              const items: any[] = [];
+              for (const art of articles) {
+                const linkTitleMatch =
+                  art.match(/<a[^>]+href=([^\s>]+?\.chn)[^>]+title="([^"]+)"/i) ||
+                  art.match(/<a[^>]+href="([^"]+?\.chn)"[^>]+title="([^"]+)"/i);
+                if (!linkTitleMatch) continue;
+                const rawHref = linkTitleMatch[1].replace(/['"]/g, '');
+                const fullLink = rawHref.startsWith('http') ? rawHref : `https://gamek.vn${rawHref}`;
+                const title = stripNewsTags(linkTitleMatch[2]);
+                const imgMatch =
+                  art.match(/srcset="[^"]*?(https:\/\/gamek\.mediacdn\.vn[^\s,]+)/i) ||
+                  art.match(/src=([^\s>]+\.(?:jpg|jpeg|png|webp)[^\s>]*)/i) ||
+                  art.match(/src="([^"]+)"/i);
+                const imageUrl = imgMatch
+                  ? imgMatch[1].replace(/['"]/g, '')
+                  : 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg';
+                const infoSplit = art.split('<div class=info>')[1] || art.split('<div class="info">')[1] || art;
+                const pMatches = [...infoSplit.matchAll(/<p(?:\s+class=[^\s>]+)?[^>]*>([\s\S]*?)(?=<p|<\/div|<\/article)/gi)];
+                let summary = '';
+                let timeText = 'Mới cập nhật';
+                let author = 'GameK';
+                for (const pm of pMatches) {
+                  const rawP = pm[0];
+                  if (rawP.includes('class=time') || rawP.includes('class="time"')) {
+                    const tMatch = rawP.match(/\|\s*([^<]+)/);
+                    if (tMatch) timeText = stripNewsTags(tMatch[1]);
+                    const aMatch = rawP.match(/class=author[^>]*>([^<]+)/) || rawP.match(/class="author"[^>]*>([^<]+)/);
+                    if (aMatch) author = stripNewsTags(aMatch[1]);
+                  } else if (!summary) {
+                    summary = stripNewsTags(pm[1]);
+                  }
+                }
+                if (title && fullLink) {
+                  items.push({
+                    id: `gk_${Buffer.from(fullLink).toString('base64').slice(0, 16)}`,
+                    title,
+                    summary: summary || title,
+                    imageUrl,
+                    link: fullLink,
+                    publishedAt: timeText,
+                    source: 'GameK Manga/Film',
+                    region: 'vn',
+                    author
+                  });
+                }
+                if (items.length >= 18) break;
+              }
+              return items;
+            } catch {
+              return [];
+            }
+          };
+
+          const fetchMal = async () => {
+            try {
+              const r = await fetch('https://myanimelist.net/rss/news.xml', {
+                headers: { 'User-Agent': USER_AGENT }
+              });
+              if (!r.ok) return [];
+              const xml = await r.text();
+              const rawItems = xml.split('<item>').slice(1);
+              const items: any[] = [];
+              for (const it of rawItems) {
+                const title = stripNewsTags(it.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '');
+                const link = (it.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '').trim();
+                const desc = stripNewsTags(it.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '');
+                const pubDateRaw = (it.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || '').trim();
+                const thumb = (it.match(/<media:thumbnail>([\s\S]*?)<\/media:thumbnail>/)?.[1] || '').trim();
+                let timeText = 'Mới nhất';
+                if (pubDateRaw) {
+                  const d = new Date(pubDateRaw);
+                  if (!isNaN(d.getTime())) {
+                    timeText = d.toLocaleDateString('vi-VN', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                  }
+                }
+                if (title && link) {
+                  items.push({
+                    id: `mal_${Buffer.from(link).toString('base64').slice(0, 16)}`,
+                    title,
+                    summary: desc || title,
+                    imageUrl:
+                      thumb ||
+                      'https://s4.anilist.co/file/anilistcdn/media/anime/banner/151807-37yfQA3ym8PA.jpg',
+                    link,
+                    publishedAt: timeText,
+                    source: 'MyAnimeList News',
+                    region: 'global',
+                    author: 'MAL Editorial'
+                  });
+                }
+                if (items.length >= 15) break;
+              }
+              return items;
+            } catch {
+              return [];
+            }
+          };
+
+          const [gkItems, malItems] = await Promise.all([
+            region === 'global' ? Promise.resolve([]) : fetchGameK(),
+            region === 'vn' ? Promise.resolve([]) : fetchMal()
+          ]);
+          let combined = [...gkItems, ...malItems];
+          if (keyword) {
+            combined = combined.filter(
+              (n) => n.title.toLowerCase().includes(keyword) || n.summary.toLowerCase().includes(keyword)
+            );
+          }
+
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({ items: combined }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err.message, items: [] }));
+        }
+      });
+
+      // 7. News Article Detail Crawler (/api/news/detail?url=...)
+      server.middlewares.use('/api/news/detail', async (req, res) => {
+        try {
+          const urlObj = new URL(req.url || '', 'http://localhost');
+          const rawUrl = (urlObj.searchParams.get('url') || '').trim();
+          if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Missing or invalid url parameter', blocks: [] }));
+            return;
+          }
+
+          const parsedUrl = new URL(rawUrl);
+          const allowedHosts = ['gamek.vn', 'www.gamek.vn', 'myanimelist.net', 'www.myanimelist.net'];
+          if (!allowedHosts.includes(parsedUrl.hostname.toLowerCase())) {
+            res.statusCode = 403;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Unsupported news host', blocks: [] }));
+            return;
+          }
+
+          const r = await fetch(rawUrl, {
+            headers: {
+              'User-Agent': USER_AGENT,
+              Accept: 'text/html,application/xhtml+xml,*/*'
+            }
+          });
+          if (!r.ok) {
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: `Upstream HTTP ${r.status}`, blocks: [] }));
+            return;
+          }
+
+          const html = await r.text();
+          const cleanBox = (s = '') =>
+            s
+              .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+              .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+              .replace(/<zone[\s\S]*?<\/zone>/gi, ' ')
+              .replace(/<div[^>]*(?:link-content-footer|tag-list|related|ads)[^>]*>[\s\S]*?<\/div>/gi, ' ');
+
+          const blocks: Array<{ type: 'text' | 'image'; content: string }> = [];
+          const seen = new Set<string>();
+          let title = '';
+          let sapo = '';
+
+          if (parsedUrl.hostname.toLowerCase().includes('gamek.vn')) {
+            const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+            title = h1Match ? stripNewsTags(h1Match[1]) : '';
+            const sapoMatch = html.match(/<h2[^>]*(?:data-field\s*=\s*["']?sapo["']?|class\s*=\s*["']?sapo["']?)[^>]*>([\s\S]*?)<\/h2>/i);
+            sapo = sapoMatch ? stripNewsTags(sapoMatch[1]) : '';
+            const bodyMatch =
+              html.match(/<section[^>]*itemprop\s*=\s*["']?articleBody["']?[^>]*>([\s\S]*?)<\/section>/i) ||
+              html.match(/<div[^>]*class\s*=\s*["']?[^"']*rightdetail_content[^"']*["']?[^>]*>([\s\S]*?)<\/div>/i);
+            const rawBody = bodyMatch ? cleanBox(bodyMatch[1]) : cleanBox(html);
+            const tokenRegex = /<p\b[^>]*>[\s\S]*?(?=<\/p>|<p\b|<h[2-4]\b|<div\b|<figure\b|<\/section>|$)|<h[2-4]\b[^>]*>[\s\S]*?<\/h[2-4]>|<img\b[^>]*>/gi;
+            let m;
+            while ((m = tokenRegex.exec(rawBody)) !== null) {
+              const chunk = m[0];
+              if (/^<img\b/i.test(chunk)) {
+                const src =
+                  extractNewsAttr(chunk, 'data-original') ||
+                  extractNewsAttr(chunk, 'data-src') ||
+                  extractNewsAttr(chunk, 'src');
+                if (src && /^https?:\/\//i.test(src) && !/\/(icon|logo|avatar|loading|placeholder|1x1)\b/i.test(src) && !seen.has(src)) {
+                  seen.add(src);
+                  blocks.push({ type: 'image', content: src });
+                }
+                continue;
+              }
+              const innerImgs = chunk.match(/<img\b[^>]*>/gi) || [];
+              for (const imgTag of innerImgs) {
+                const src =
+                  extractNewsAttr(imgTag, 'data-original') ||
+                  extractNewsAttr(imgTag, 'data-src') ||
+                  extractNewsAttr(imgTag, 'src');
+                if (src && /^https?:\/\//i.test(src) && !/\/(icon|logo|avatar|loading|placeholder|1x1)\b/i.test(src) && !seen.has(src)) {
+                  seen.add(src);
+                  blocks.push({ type: 'image', content: src });
+                }
+              }
+              const text = stripNewsTags(chunk);
+              if (text && text.length >= 12 && !/^(Tin liên quan|Xem thêm|Theo dõi|Copy link)/i.test(text) && !seen.has(text)) {
+                seen.add(text);
+                blocks.push({ type: 'text', content: text });
+              }
+            }
+          } else {
+            const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+            title = h1Match ? stripNewsTags(h1Match[1]) : '';
+            const contentMatch =
+              html.match(/<div[^>]*class\s*=\s*["'][^"']*content[^"']*["'][^>]*>([\s\S]*?)<div[^>]*class\s*=\s*["'][^"']*news-info-block/i) ||
+              html.match(/<div[^>]*class\s*=\s*["'][^"']*news-container[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+            const rawBody = contentMatch ? cleanBox(contentMatch[1]) : '';
+            if (rawBody) {
+              const imgs = rawBody.match(/<img\b[^>]*>/gi) || [];
+              for (const imgTag of imgs) {
+                const src = extractNewsAttr(imgTag, 'data-src') || extractNewsAttr(imgTag, 'src');
+                if (src && /^https?:\/\//i.test(src) && !seen.has(src)) {
+                  seen.add(src);
+                  blocks.push({ type: 'image', content: src });
+                }
+              }
+              const cleanText = rawBody
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>|<\/div>/gi, '\n')
+                .replace(/<[^>]+>/g, ' ');
+              const lines = cleanText.split(/\n+/).map((l) => decodeNewsHtml(l)).filter((l) => l.length > 20);
+              for (const line of lines) {
+                if (!seen.has(line)) {
+                  seen.add(line);
+                  blocks.push({ type: 'text', content: line });
+                }
+              }
+            }
+          }
+
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(JSON.stringify({ title, sapo, blocks }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err.message, blocks: [] }));
+        }
+      });
     }
   };
 }

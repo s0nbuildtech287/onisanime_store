@@ -4,6 +4,8 @@ import {
   AnimeRelationItem,
   MangaCardItem,
   MediaItem,
+  NewsArticleItem,
+  NewsContentBlock,
   ScheduleAnimeItem,
   StreamServerGroup,
   WatchHistoryItem
@@ -1079,6 +1081,43 @@ export const mangaApi = {
       comicName: 'Manga Reader',
       pages: []
     };
+  }
+};
+
+// ==================== 3.5 NEWS CRAWLER API ====================
+
+export const newsApi = {
+  async getNewsList(
+    region: 'all' | 'vn' | 'global' = 'all',
+    keyword = ''
+  ): Promise<NewsArticleItem[]> {
+    try {
+      const qs = new URLSearchParams({ region });
+      if (keyword.trim()) qs.set('keyword', keyword.trim());
+      const res = await fetch(`/api/news/list?${qs.toString()}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data?.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getArticleDetail(
+    url: string
+  ): Promise<{ title?: string; sapo?: string; blocks: NewsContentBlock[] }> {
+    try {
+      const res = await fetch(`/api/news/detail?url=${encodeURIComponent(url)}`);
+      if (!res.ok) return { blocks: [] };
+      const data = await res.json();
+      return {
+        title: data?.title || '',
+        sapo: data?.sapo || '',
+        blocks: Array.isArray(data?.blocks) ? data.blocks : []
+      };
+    } catch {
+      return { blocks: [] };
+    }
   }
 };
 

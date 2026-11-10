@@ -24,7 +24,10 @@ import {
   History,
   LogIn,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Newspaper,
+  Globe,
+  ExternalLink
 } from 'lucide-react';
 import {
   AnimeCardItem,
@@ -33,6 +36,7 @@ import {
   MediaCategory,
   MediaItem,
   MediaStatus,
+  NewsArticleItem,
   ScheduleAnimeItem,
   WatchHistoryItem
 } from './types';
@@ -40,6 +44,7 @@ import {
   anilistApi,
   animeApi,
   mangaApi,
+  newsApi,
   storageApi,
   watchHistoryApi
 } from './services/otakuApi';
@@ -48,6 +53,7 @@ import MangaReaderModal from './components/MangaReaderModal';
 import Anime3DShowcase from './components/Anime3DShowcase';
 import BrandLogo from './components/BrandLogo';
 import LoginModal from './components/LoginModal';
+import NewsReaderModal from './components/NewsReaderModal';
 
 const WEEKDAYS = [
   { id: 'monday', label: 'Thứ 2' },
@@ -128,8 +134,8 @@ const App: React.FC = () => {
     ? 'schedule'
     : location.pathname.startsWith('/manga')
     ? 'manga'
-    : location.pathname.startsWith('/watchlist')
-    ? 'watchlist'
+    : location.pathname.startsWith('/news')
+    ? 'news'
     : location.pathname.startsWith('/ranking')
     ? 'ranking'
     : 'anime';
@@ -213,6 +219,12 @@ const App: React.FC = () => {
   const [rankingMangaItems, setRankingMangaItems] = useState<MangaCardItem[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
 
+  // News Crawler Tab States
+  const [newsList, setNewsList] = useState<NewsArticleItem[]>([]);
+  const [loadingNews, setLoadingNews] = useState(false);
+  const [newsRegion, setNewsRegion] = useState<'all' | 'vn' | 'global'>('all');
+  const [readingNewsArticle, setReadingNewsArticle] = useState<NewsArticleItem | null>(null);
+
   // Active Modals
   const [playingAnime, setPlayingAnime] = useState<PlayerTargetAnime | null>(null);
   const [readingMangaSlug, setReadingMangaSlug] = useState<string | null>(null);
@@ -221,6 +233,16 @@ const App: React.FC = () => {
   useEffect(() => {
     storageApi.getAll().then(setWatchlist);
   }, []);
+
+  // Load News (Crawl từ GameK Manga/Film + MyAnimeList News)
+  useEffect(() => {
+    if (activeTab !== 'news') return;
+    setLoadingNews(true);
+    newsApi
+      .getNewsList(newsRegion, submittedSearch)
+      .then(setNewsList)
+      .finally(() => setLoadingNews(false));
+  }, [activeTab, newsRegion, submittedSearch]);
 
   // Tự động mở Anime / Manga khi người dùng truy cập link chia sẻ (?watch=... hoặc ?read=...)
   useEffect(() => {
@@ -430,7 +452,7 @@ const App: React.FC = () => {
     setAnimePage(1);
     setMangaPage(1);
     setSubmittedSearch(searchQuery);
-    if (activeTab !== 'anime' && activeTab !== 'manga') {
+    if (activeTab !== 'anime' && activeTab !== 'manga' && activeTab !== 'news') {
       goToTab('anime');
     }
   };
@@ -645,15 +667,15 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => goToTab('watchlist')}
+              onClick={() => goToTab('news')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
-                activeTab === 'watchlist'
-                  ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-lg'
+                activeTab === 'news'
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/25'
                   : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Bookmark className="w-4 h-4" />
-              <span>Tủ Của Tôi ({watchlist.length})</span>
+              <Newspaper className="w-4 h-4" />
+              <span>Tin Tức</span>
             </button>
 
             <button
@@ -679,6 +701,8 @@ const App: React.FC = () => {
               placeholder={
                 activeTab === 'manga'
                   ? 'Tìm truyện: One Piece, Conan, Solo Leveling...'
+                  : activeTab === 'news'
+                  ? 'Lọc tin tức Anime / Manga...'
                   : 'Tìm Anime: Frieren, Solo Leveling, Naruto...'
               }
               className="w-full pl-10 pr-16 py-2 rounded-xl bg-slate-900/90 border border-white/10 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-pink-500"
@@ -1568,88 +1592,219 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* 4. TAB TỦ OTAKU CỦA TÔI (WATCHLIST & READLIST) */}
-        {activeTab === 'watchlist' && (
+        {/* 4. TAB TIN TỨC ANIME & MANGA (CRAWL LIVE TỪ GAMEK & MYANIMELIST) */}
+        {activeTab === 'news' && (
           <div className="space-y-6">
-            <div className="glass-panel rounded-2xl p-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-black text-white">
-                  🗂️ TỦ ANIME & MANGA CÁ NHÂN ({watchlist.length})
+            <div className="glass-panel rounded-3xl p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-[11px] font-extrabold">
+                  <Newspaper className="w-3.5 h-3.5" /> OTAKU NEWS CRAWLER • LIVE FEED
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  📰 TIN TỨC ANIME & MANGA MỚI NHẤT
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Lưu trữ tiến độ tập đang xem & chapter đang đọc dở của bạn.
+                  Tổng hợp & cào trực tiếp tin nóng từ GameK Manga/Film (Việt Nam) và MyAnimeList News (Quốc tế) — bấm vào bài để đọc chi tiết ngay.
                 </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {(
+                  [
+                    { id: 'all', label: '🌐 Tất cả nguồn' },
+                    { id: 'vn', label: '🇻🇳 Tin Việt Nam' },
+                    { id: 'global', label: '🔥 Tin Quốc Tế' }
+                  ] as const
+                ).map((reg) => (
+                  <button
+                    key={reg.id}
+                    onClick={() => setNewsRegion(reg.id)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border ${
+                      newsRegion === reg.id
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 border-transparent shadow-lg shadow-cyan-500/20'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10'
+                    }`}
+                  >
+                    {reg.label}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => {
+                    setLoadingNews(true);
+                    newsApi
+                      .getNewsList(newsRegion, submittedSearch)
+                      .then(setNewsList)
+                      .finally(() => setLoadingNews(false));
+                  }}
+                  className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all"
+                  title="Làm mới tin tức"
+                >
+                  <RotateCcw className={`w-4 h-4 ${loadingNews ? 'animate-spin text-cyan-400' : ''}`} />
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {watchlist.map((item) => {
-                const isManga = item.category === MediaCategory.MANGA;
-                return (
-                  <div
-                    key={item.id}
+            {loadingNews ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+                <Loader2 className="w-9 h-9 animate-spin text-cyan-400" />
+                <p className="text-sm font-bold">Đang thu thập tin tức Anime / Manga mới nhất...</p>
+              </div>
+            ) : newsList.length === 0 ? (
+              <div className="glass-panel rounded-3xl p-10 text-center space-y-3">
+                <Newspaper className="w-10 h-10 text-slate-500 mx-auto" />
+                <p className="text-sm font-bold text-slate-300">
+                  Không tìm thấy bài viết phù hợp.
+                </p>
+                {submittedSearch && (
+                  <button
                     onClick={() => {
-                      if (isManga && item.slug) {
-                        handleOpenManga(item.slug);
-                      } else {
-                        handleOpenAnime({
-                          slug: item.slug?.startsWith('anilist_') ? undefined : item.slug,
-                          anilistId: item.slug?.startsWith('anilist_')
-                            ? parseInt(item.slug.replace('anilist_', ''), 10)
-                            : undefined,
-                          title: item.title,
-                          originTitle: item.originTitle,
-                          posterUrl: item.imageUrl,
-                          bannerUrl: item.bannerUrl,
-                          synopsis: item.description,
-                          year: item.releaseYear,
-                          malScore: item.rating
-                        });
-                      }
+                      setSearchQuery('');
+                      setSubmittedSearch('');
                     }}
-                    className="group relative rounded-2xl overflow-hidden bg-[#0c1020] border border-white/10 hover:border-pink-500/50 transition-all cursor-pointer flex flex-col"
+                    className="px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 text-xs font-bold border border-cyan-500/30 hover:bg-cyan-500/30"
                   >
-                    <div className="relative aspect-[2/3] w-full overflow-hidden">
-                      <img
-                        src={item.imageUrl}
-                        alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <span
-                        className={`absolute top-2.5 left-2.5 px-2 py-0.5 rounded-lg text-[10px] font-black ${
-                          isManga
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'bg-pink-500 text-white'
-                        }`}
-                      >
-                        {item.category}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveFromWatchlist(item.id);
-                        }}
-                        className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-black/70 hover:bg-rose-600 text-white"
-                        title="Xóa khỏi tủ"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="p-3 space-y-1">
-                      <h3 className="text-xs sm:text-sm font-extrabold text-white line-clamp-2">
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-pink-400 font-bold">
-                          {item.currentProgress || item.status}
+                    Xóa bộ lọc tìm kiếm
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Featured Lead Article */}
+                {(() => {
+                  const lead = newsList[0];
+                  return (
+                    <div
+                      onClick={() => setReadingNewsArticle(lead)}
+                      className="group relative rounded-3xl overflow-hidden bg-[#0c1020] border border-white/10 hover:border-cyan-500/50 transition-all cursor-pointer grid grid-cols-1 lg:grid-cols-12 shadow-xl"
+                    >
+                      <div className="lg:col-span-7 relative aspect-[16/9] lg:aspect-auto lg:min-h-[300px] overflow-hidden bg-slate-900">
+                        <img
+                          src={lead.imageUrl}
+                          alt={lead.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#0c1020] via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:to-[#0c1020]/90" />
+                        <span
+                          className={`absolute top-4 left-4 px-3 py-1 rounded-xl text-[11px] font-black shadow-lg ${
+                            lead.region === 'vn'
+                              ? 'bg-cyan-500 text-slate-950'
+                              : 'bg-violet-500 text-white'
+                          }`}
+                        >
+                          {lead.region === 'vn' ? '🇻🇳 TIN NỔI BẬT VN' : '🌐 GLOBAL SPOTLIGHT'}
                         </span>
-                        <span className="text-amber-300 font-bold">★ {item.rating}</span>
+                      </div>
+
+                      <div className="lg:col-span-5 p-6 sm:p-8 flex flex-col justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                            <span className="inline-flex items-center gap-1.5 font-bold text-cyan-300">
+                              <Globe className="w-3.5 h-3.5" />
+                              {lead.source}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" />
+                              {lead.publishedAt}
+                            </span>
+                          </div>
+                          <h3 className="text-lg sm:text-2xl font-black text-white group-hover:text-cyan-300 transition-colors leading-snug">
+                            {lead.title}
+                          </h3>
+                          <p className="text-xs sm:text-sm text-slate-300/90 line-clamp-4 leading-relaxed">
+                            {lead.summary}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                          <span className="text-xs font-extrabold text-cyan-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1.5">
+                            Đọc toàn bộ bài viết <ChevronRight className="w-4 h-4" />
+                          </span>
+                          <a
+                            href={lead.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-all"
+                            title="Mở trang gốc"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })()}
+
+                {/* News Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                  {newsList.slice(1).map((article) => (
+                    <article
+                      key={article.id}
+                      onClick={() => setReadingNewsArticle(article)}
+                      className="group rounded-2xl overflow-hidden bg-[#0c1020] border border-white/10 hover:border-cyan-500/50 transition-all cursor-pointer flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-900">
+                          <img
+                            src={article.imageUrl}
+                            alt={article.title}
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                          <span
+                            className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-lg text-[10px] font-black ${
+                              article.region === 'vn'
+                                ? 'bg-cyan-500 text-slate-950'
+                                : 'bg-violet-500 text-white'
+                            }`}
+                          >
+                            {article.source}
+                          </span>
+                        </div>
+
+                        <div className="p-4 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-400">
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-cyan-400" />
+                              {article.publishedAt}
+                            </span>
+                            {article.author && (
+                              <span className="truncate max-w-[120px] text-slate-500">
+                                {article.author}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-sm font-extrabold text-white group-hover:text-cyan-300 transition-colors line-clamp-2 leading-snug">
+                            {article.title}
+                          </h3>
+                          <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
+                            {article.summary}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="px-4 pb-3.5 pt-2 flex items-center justify-between border-t border-white/5 text-[11px]">
+                        <span className="font-bold text-cyan-400 group-hover:underline">
+                          Đọc bài viết →
+                        </span>
+                        <a
+                          href={article.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-slate-400 hover:text-white inline-flex items-center gap-1"
+                          title="Mở link gốc"
+                        >
+                          Nguồn gốc <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1937,6 +2092,11 @@ const App: React.FC = () => {
           setUsername(u);
         }}
         reasonMessage={loginReason}
+      />
+
+      <NewsReaderModal
+        article={readingNewsArticle}
+        onClose={() => setReadingNewsArticle(null)}
       />
     </div>
   );
